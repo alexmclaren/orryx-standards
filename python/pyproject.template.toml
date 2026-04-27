@@ -1,0 +1,180 @@
+# Python Project Template for Orryx Ecosystem
+# Version: 1.0.0
+# Last Updated: 2026-04-27
+
+[project]
+name = "product-name"  # REPLACE with your product name
+version = "1.0.0"
+description = "Product description"  # REPLACE
+readme = "README.md"
+requires-python = ">=3.11"  # STANDARD: Python 3.11+
+license = {text = "MIT"}
+authors = [
+    {name = "Orryx", email = "engineering@orryx.dev"}
+]
+
+dependencies = [
+    # Web Framework
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+
+    # Database & ORM
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.13.0",
+    "psycopg2-binary>=2.9.9",  # PostgreSQL driver
+
+    # Authentication & Security
+    "python-jose[cryptography]>=3.3.0",  # JWT
+    "passlib[bcrypt]>=1.7.4",  # Password hashing
+    "python-multipart>=0.0.6",  # File uploads
+
+    # Error Handling (MANDATORY)
+    "error-core-python>=1.0.0",  # RFC 7807 standard
+
+    # Validation
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+
+    # Monitoring & Logging
+    "sentry-sdk[fastapi]>=1.40.0",
+    "structlog>=24.1.0",
+
+    # Environment
+    "python-dotenv>=1.0.0",
+
+    # HTTP Client
+    "httpx>=0.26.0",
+
+    # Date/Time
+    "python-dateutil>=2.8.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    # Testing
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-mock>=3.12.0",
+    "faker>=22.0.0",
+
+    # Linting & Formatting
+    "ruff>=0.1.0",
+    "black>=24.0.0",
+    "mypy>=1.8.0",
+
+    # Type Stubs
+    "types-python-dateutil",
+    "types-passlib",
+
+    # Security
+    "pip-audit>=2.6.0",
+    "trufflehog>=3.0.0",
+]
+
+ai = [
+    # AI/LLM (optional, add if product uses AI)
+    "openai>=1.10.0",
+    "anthropic>=0.15.0",
+    "langchain>=0.1.0",
+    "pinecone-client>=3.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = [
+    "--cov=src",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-fail-under=80",  # MANDATORY: 80% coverage
+    "-v",
+]
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/tests/*",
+    "*/migrations/*",
+    "*/seeders/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+
+[tool.black]
+line-length = 100
+target-version = ['py311']
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.venv
+  | \.eggs
+  | \.tox
+  | build
+  | dist
+  | migrations
+)/
+'''
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "C",   # flake8-comprehensions
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+]
+
+ignore = [
+    "E501",  # line too long (handled by black)
+    "B008",  # do not perform function calls in argument defaults
+    "C901",  # too complex (let humans decide)
+]
+
+[tool.ruff.isort]
+known-first-party = ["src"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_any_generics = false
+disallow_subclassing_any = false
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+check_untyped_defs = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "uvicorn.*",
+    "sentry_sdk.*",
+]
+ignore_missing_imports = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
