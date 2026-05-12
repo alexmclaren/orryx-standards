@@ -7,10 +7,19 @@ This repository contains the master standards, templates, and modules for the Or
 ## Purpose
 
 All Orryx products MUST align to the standards defined in this repository:
-- **CLAUDE.md**: Execution protocol for Claude agents
-- **AGENTS.md**: Agent behavior rules
+- **CLAUDE.md / CLAUDE.base.md**: Execution protocol for Claude agents (canonical source — see "Single-sourcing pattern" below)
+- **AGENTS.md / AGENTS.base.md**: Agent behavior rules (canonical source — see "Single-sourcing pattern" below)
+- **gitignore-snippets/**: Canonical `.gitignore` patterns for secret/PII hygiene (NEW — Wave 0, 2026-05-12)
 - **Templates**: Python, Node.js, and infrastructure templates
 - **Terraform Modules**: Reusable AWS infrastructure components
+
+### Single-sourcing pattern (Wave 0, 2026-05-12)
+
+Previously, `CLAUDE.md` and `AGENTS.md` were duplicated by file-copy across 4–5 repos (orryx-brain, orryx-flow, orryx-mcp-gateway, Clinical_trials, orryx-standards). Files were byte-identical (verified by SHA-256), so drift was inevitable.
+
+**Now (transitional state):** the canonical content lives in this repo as both `CLAUDE.md`/`AGENTS.md` (legacy filenames, still tracked) and `CLAUDE.base.md`/`AGENTS.base.md` (explicit "this is the base for downstream pointer references"). Downstream repos will be migrated to thin pointer files in a follow-up PR per repo.
+
+**Single-source rule:** any change to shared agent/Claude behaviour goes in **`CLAUDE.base.md`** / **`AGENTS.base.md`** here. The legacy filenames are kept in sync until the downstream rollout is complete, then removed.
 
 ## Repository Structure
 
