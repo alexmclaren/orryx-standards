@@ -1,239 +1,132 @@
 #!/usr/bin/env tsx
 /**
- * Seed Historical ADRs to Pinecone
+ * Pinecone Memory Seeding: Historical ADRs
  *
- * Extracts Architecture Decision Records from docs/architecture/ADRs/ directories
- * and writes them to Pinecone memory for future retrieval.
+ * Extracts Architecture Decision Records from architecture/decisions/ directories
+ * and writes them to Pinecone memory.
  *
- * Usage:
- *   npx tsx seed-historical-adrs.ts
- *
- * Environment:
- *   PINECONE_API_KEY - Required
- *   OPENAI_API_KEY - Required
+ * Expected output: ~100 ADRs
  */
 
-import { readdirSync, readFileSync, existsSync, statSync } from 'fs';
-import { join, basename } from 'path';
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import { readFileSync, readdirSync, existsSync } from 'fs';
+import { join } from 'path';
+import { Pinecone } from '@pinecone-database/pinecone';
+import OpenAI from 'openai';
+import { v4 as uuidv4 } from 'uuid';
 
-const execAsync = promisify(exec);
+const PINECONE_API_KEY = process.env.PINECONE_API_KEY;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+
+if (!PINECONE_API_KEY || !OPENAI_API_KEY) {
+  console.error('❌ Missing API keys. Set PINECONE_API_KEY and OPENAI_API_KEY');
+  process.exit(1);
+}
+
+const pc = new Pinecone({ apiKey: PINECONE_API_KEY });
+const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+const index = pc.index('orryx-dev-intelligence');
 
 interface ADRLocation {
   repo: string;
   path: string;
 }
 
-// ADR locations across repositories
 const ADR_LOCATIONS: ADRLocation[] = [
-  {
-    repo: 'orryx-brain',
-    path: 'D:\\orryx-brain\\docs\\architecture\\ADRs',
-  },
-  {
-    repo: 'orryx-brain',
-    path: 'D:\\orryx-brain\\architecture\\decisions',
-  },
-  {
-    repo: 'pillarworks',
-    path: 'D:\\pillarworks-build-mvp\\docs\\architecture\\ADRs',
-  },
-  {
-    repo: 'pillarworks',
-    path: 'D:\\pillarworks-build-mvp\\architecture\\decisions',
-  },
-  {
-    repo: 'clinical-trials',
-    path: 'D:\\Clinical.Trials\\docs\\architecture\\ADRs',
-  },
-  {
-    repo: 'clinical-trials',
-    path: 'D:\\Clinical.Trials\\architecture\\decisions',
-  },
+  { repo: 'orryx-brain', path: 'D:\\orryx-brain\\docs\\architecture\\ADRs' },
+  { repo: 'orryx-brain', path: 'D:\\orryx-brain\\architecture\\decisions' },
+  { repo: 'pillarworks', path: 'D:\\pillarworks-build-mvp\\docs\\architecture\\ADRs' },
+  { repo: 'pillarworks', path: 'D:\\pillarworks-build-mvp\\architecture\\decisions' },
+  { repo: 'clinical-trials', path: 'D:\\Clinical.Trials\\docs\\architecture\\ADRs' },
+  { repo: 'clinical-trials', path: 'D:\\Clinical.Trials\\architecture\\decisions' }
 ];
 
-interface ADRFile {
-  repo: string;
-  path: string;
-  filename: string;
-  content: string;
-  number?: number;
-  title?: string;
-}
+async function seedADRs() {
+  console.log('🌱 Seeding historical ADRs to Pinecone...\n');
 
-function extractADRMetadata(content: string, filename: string): { number?: number; title?: string } {
-  // Try to extract ADR number from filename (e.g., "ADR-001-something.md", "001-something.md")
-  const fileNumberMatch = filename.match(/(?:ADR-)?(\d+)/i);
-  const number = fileNumberMatch ? parseInt(fileNumberMatch[1], 10) : undefined;
-
-  // Try to extract title from first heading
-  const headingMatch = content.match(/^#\s+(.+)$/m);
-  const title = headingMatch ? headingMatch[1].trim() : basename(filename, '.md');
-
-  return { number, title };
-}
-
-async function writeToMemory(adr: ADRFile): Promise<void> {
-  // Build content with metadata
-  const contentWithMetadata = `# ADR ${adr.number || 'N/A'}: ${adr.title}\n\n${adr.content}`;
-
-  // Extract tags from content
-  const tags = ['adr', 'decision', 'architecture'];
-
-  // Look for common ADR keywords to add as tags
-  const contentLower = adr.content.toLowerCase();
-  if (contentLower.includes('security')) tags.push('security');
-  if (contentLower.includes('performance')) tags.push('performance');
-  if (contentLower.includes('scalability')) tags.push('scalability');
-  if (contentLower.includes('database')) tags.push('database');
-  if (contentLower.includes('api')) tags.push('api');
-  if (contentLower.includes('authentication')) tags.push('authentication');
-  if (contentLower.includes('frontend')) tags.push('frontend');
-  if (contentLower.includes('backend')) tags.push('backend');
-
-  // Call pinecone-memory-write.ts via exec
-  const scriptPath = join(__dirname, 'pinecone-memory-write.ts');
-
-  const command = [
-    'npx tsx',
-    `"${scriptPath}"`,
-    `--content="${contentWithMetadata.replace(/"/g, '\\"')}"`,
-    `--type=adr`,
-    `--repo=${adr.repo}`,
-    `--domain=architecture`,
-    `--tags=${tags.join(',')}`,
-    `--importance=high`,
-    `--author=historical-seed`,
-    `--author-type=human`,
-    `--validated`,
-  ].join(' ');
-
-  try {
-    const { stdout, stderr } = await execAsync(command, {
-      maxBuffer: 10 * 1024 * 1024, // 10MB buffer for large ADRs
-    });
-
-    if (stderr) {
-      console.error(`   Stderr: ${stderr}`);
-    }
-
-    console.log(`✅ ${adr.repo}: ADR ${adr.number || '?'} - ${adr.title}`);
-  } catch (error) {
-    console.error(`❌ Failed to write ${adr.filename}:`, error);
-    throw error;
-  }
-}
-
-async function seedADRs(): Promise<void> {
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('📚 Seeding Historical ADRs to Pinecone');
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-
-  // Validate environment
-  if (!process.env.PINECONE_API_KEY) {
-    console.error('❌ PINECONE_API_KEY environment variable not set');
-    process.exit(1);
-  }
-
-  if (!process.env.OPENAI_API_KEY) {
-    console.error('❌ OPENAI_API_KEY environment variable not set');
-    process.exit(1);
-  }
-
-  // Collect all ADR files
-  const adrFiles: ADRFile[] = [];
+  let totalADRs = 0;
 
   for (const location of ADR_LOCATIONS) {
     if (!existsSync(location.path)) {
-      console.log(`⏭️  Skipping non-existent path: ${location.path}`);
+      console.log(`⚠️  ${location.path} not found, skipping`);
       continue;
     }
 
-    const stat = statSync(location.path);
-    if (!stat.isDirectory()) {
-      console.log(`⏭️  Skipping non-directory: ${location.path}`);
-      continue;
-    }
+    console.log(`📂 Processing ${location.repo} ADRs from ${location.path}`);
 
-    console.log(`📂 Scanning ${location.repo}: ${location.path}`);
+    const files = readdirSync(location.path).filter(f => f.endsWith('.md'));
+    console.log(`   Found ${files.length} ADR files`);
 
-    try {
-      const files = readdirSync(location.path);
-      const mdFiles = files.filter((f) => f.endsWith('.md'));
+    for (const file of files) {
+      const filePath = join(location.path, file);
 
-      console.log(`   Found ${mdFiles.length} markdown files`);
-
-      for (const file of mdFiles) {
-        const filePath = join(location.path, file);
+      try {
         const content = readFileSync(filePath, 'utf-8');
-        const metadata = extractADRMetadata(content, file);
 
-        adrFiles.push({
-          repo: location.repo,
-          path: filePath,
-          filename: file,
-          content,
-          number: metadata.number,
-          title: metadata.title,
+        // Extract title from filename or first header
+        const titleMatch = content.match(/^#\s+(.+)$/m);
+        const title = titleMatch ? titleMatch[1] : file.replace('.md', '');
+
+        // Auto-tag based on content
+        const contentLower = content.toLowerCase();
+        const tags = ['adr', location.repo];
+
+        if (contentLower.includes('database')) tags.push('database');
+        if (contentLower.includes('api')) tags.push('api');
+        if (contentLower.includes('authentication')) tags.push('authentication');
+        if (contentLower.includes('frontend')) tags.push('frontend');
+        if (contentLower.includes('backend')) tags.push('backend');
+
+        // Generate embedding
+        const embeddingResponse = await openai.embeddings.create({
+          model: 'text-embedding-3-small',
+          input: content,
+          dimensions: 1536
         });
+
+        const embedding = embeddingResponse.data[0].embedding;
+        const memoryId = uuidv4();
+
+        // Write to Pinecone
+        await index.namespace(`${location.repo}.architecture`).upsert([{
+          id: memoryId,
+          values: embedding,
+          metadata: {
+            type: 'adr',
+            repo: location.repo,
+            domain: 'architecture',
+            title: title,
+            filename: file,
+            source_file: filePath,
+            content: content.substring(0, 1000),
+            tags: tags,
+            importance: 'high',
+            confidence: 1.0,
+            validated: true,
+            created_at: new Date().toISOString(),
+            author: 'historical-seed',
+            author_type: 'human'
+          }
+        }]);
+
+        totalADRs++;
+        console.log(`   ✅ ${title}`);
+
+        // Small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+      } catch (error) {
+        console.error(`   ❌ Failed to seed ${file}: ${error}`);
       }
-    } catch (error) {
-      console.error(`❌ Error scanning ${location.path}:`, error);
     }
   }
 
-  if (adrFiles.length === 0) {
-    console.log('\n⚠️  No ADR files found. Exiting.');
-    return;
-  }
-
-  console.log(`\n📊 Total ADRs to seed: ${adrFiles.length}\n`);
-
-  // Sort by number if available
-  adrFiles.sort((a, b) => {
-    if (a.number !== undefined && b.number !== undefined) {
-      return a.number - b.number;
-    }
-    return a.filename.localeCompare(b.filename);
-  });
-
-  // Write each ADR to Pinecone
-  let successCount = 0;
-  let errorCount = 0;
-
-  for (const adr of adrFiles) {
-    try {
-      await writeToMemory(adr);
-      successCount++;
-
-      // Add delay to avoid rate limiting
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    } catch (error) {
-      console.error(`❌ Error writing ${adr.filename}:`, error);
-      errorCount++;
-    }
-  }
-
-  console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('📊 Seeding Complete');
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-  console.log(`✅ Successfully seeded: ${successCount} ADRs`);
-  console.log(`❌ Errors: ${errorCount} ADRs`);
-  console.log(`📁 Total processed: ${adrFiles.length} ADRs\n`);
-
-  if (errorCount > 0) {
-    console.log('⚠️  Some ADRs failed to seed. Check errors above.');
-    process.exit(1);
-  }
+  console.log(`\n🎉 Seeded ${totalADRs} ADRs successfully!`);
 }
 
-// Run if executed directly
-if (require.main === module) {
-  seedADRs().catch((error) => {
-    console.error('Fatal error:', error);
-    process.exit(1);
-  });
-}
+// Run directly
+seedADRs().catch((error) => {
+  console.error('Fatal error:', error);
+  process.exit(1);
+});
 
 export { seedADRs };

@@ -406,10 +406,8 @@ Examples:
 // Export for use in hooks
 export { writeMemory, WriteMemoryOptions, MemoryMetadata, MemoryType, Importance };
 
-// Run CLI if executed directly
-if (require.main === module) {
-  main().catch((error) => {
-    console.error('Fatal error:', error);
-    process.exit(1);
-  });
-}
+// Run CLI directly
+main().catch((error) => {
+  console.error('Fatal error:', error);
+  process.exit(1);
+});
