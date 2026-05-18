@@ -1,0 +1,422 @@
+# Execution Budgets & Retry Governance Configuration
+# Version: 1.0.0
+# Last Updated: 2026-05-18
+#
+# Prevents infinite retry loops and runaway autonomous execution
+# Addresses Codeburn finding: 35 sessions with 22-134 retries
+
+version: "1.0.0"
+
+# ============================================================================
+# RETRY BUDGETS BY TASK TYPE
+# ============================================================================
+#
+# Maximum retry attempts before escalation
+
+retry_budgets:
+  # Simple tasks (should rarely need retries)
+  typo_fix:
+    max_attempts: 2
+    cost_ceiling_usd: 1.00
+    description: "Typo fixes should succeed quickly"
+    typical_retries: 0
+
+  documentation:
+    max_attempts: 3
+    cost_ceiling_usd: 2.00
+    description: "Documentation updates"
+    typical_retries: 0-1
+
+  # Medium tasks
+  bug_fix_simple:
+    max_attempts: 5
+    cost_ceiling_usd: 10.00
+    description: "Simple bug fixes"
+    typical_retries: 1-2
+
+  refactor_small:
+    max_attempts: 5
+    cost_ceiling_usd: 15.00
+    description: "Small refactoring"
+    typical_retries: 1-3
+
+  # Complex tasks
+  bug_fix_complex:
+    max_attempts: 10
+    cost_ceiling_usd: 25.00
+    description: "Complex bug requiring investigation"
+    typical_retries: 3-7
+
+  feature_small:
+    max_attempts: 15
+    cost_ceiling_usd: 50.00
+    description: "Small feature implementation"
+    typical_retries: 3-10
+
+  feature_medium:
+    max_attempts: 25
+    cost_ceiling_usd: 100.00
+    description: "Medium feature implementation"
+    typical_retries: 5-15
+
+  feature_large:
+    max_attempts: 40
+    cost_ceiling_usd: 200.00
+    description: "Large feature implementation"
+    typical_retries: 10-30
+
+  # Special tasks
+  architecture_decision:
+    max_attempts: 8
+    cost_ceiling_usd: 30.00
+    description: "Architecture design (fewer retries, more thinking)"
+    typical_retries: 2-5
+
+  investigation:
+    max_attempts: 12
+    cost_ceiling_usd: 40.00
+    description: "Codebase investigation"
+    typical_retries: 3-8
+
+  debugging_session:
+    max_attempts: 15
+    cost_ceiling_usd: 50.00
+    description: "Debugging session"
+    typical_retries: 5-12
+
+# ============================================================================
+# EXECUTION BUDGET TRACKING
+# ============================================================================
+
+budget_tracking:
+  enabled: true
+
+  track_per_session: true
+  track_per_task: true
+  track_per_story: true
+
+  # What to track
+  metrics:
+    - attempts_used
+    - cost_accumulated
+    - time_elapsed
+    - tokens_used
+    - files_modified_count
+    - test_failures_count
+    - errors_encountered
+
+  # Checkpoint actions
+  checkpoints:
+    # Soft checkpoint: 50% of budget
+    budget_50_percent:
+      action: "log_progress"
+      message: "Halfway through budget. Progress: {summary}"
+
+    # Warning checkpoint: 75% of budget
+    budget_75_percent:
+      action: "warn_and_review"
+      message: "Budget 75% used. {attempts_used}/{max_attempts} attempts. Review approach?"
+
+    # Hard checkpoint: 90% of budget
+    budget_90_percent:
+      action: "pause_and_escalate"
+      message: "Budget 90% used. Approaching limit. Human review recommended."
+
+    # Cost ceiling checkpoints
+    cost_50_percent:
+      action: "log_cost"
+      message: "Cost 50% of ceiling: ${cost_accumulated}/${cost_ceiling}"
+
+    cost_75_percent:
+      action: "warn_cost"
+      message: "Cost 75% of ceiling: ${cost_accumulated}/${cost_ceiling}"
+
+    cost_90_percent:
+      action: "pause_and_escalate"
+      message: "Cost 90% of ceiling: ${cost_accumulated}/${cost_ceiling}. Continue?"
+
+# ============================================================================
+# LOOP DETECTION
+# ============================================================================
+#
+# Detect and break infinite loops
+
+loop_detection:
+  enabled: true
+
+  # Pattern 1: Identical errors
+  identical_errors:
+    enabled: true
+    threshold: 3  # Same error 3 times in a row
+    window: "consecutive"
+    action: "circuit_breaker"
+    message: "Same error repeated 3 times. Breaking loop."
+
+  # Pattern 2: Oscillating errors (A-B-A-B pattern)
+  oscillating_errors:
+    enabled: true
+    pattern: "A-B-A-B"
+    action: "circuit_breaker"
+    message: "Oscillating between two errors. Breaking loop."
+
+  # Pattern 3: Same file breaking repeatedly
+  same_file_loop:
+    enabled: true
+    threshold: 5  # Same file failing 5 times
+    action: "circuit_breaker"
+    message: "File '{file}' failing repeatedly. Breaking loop."
+
+  # Pattern 4: Code churn (changing/reverting repeatedly)
+  code_churn:
+    enabled: true
+    threshold: 4  # Same lines changed 4+ times
+    action: "circuit_breaker"
+    message: "Code churn detected. Changing same lines repeatedly. Breaking loop."
+
+  # Pattern 5: Test failure loop
+  test_failure_loop:
+    enabled: true
+    threshold: 5  # Same test failing 5 times
+    action: "circuit_breaker"
+    message: "Test '{test}' failing repeatedly. Breaking loop."
+
+  # Circuit breaker behavior
+  circuit_breaker:
+    action: "pause_and_escalate"
+    cooldown_minutes: 5
+    require_human_approval: true
+    message: "Loop detected. Pausing for {cooldown_minutes} minutes. Human review required."
+
+# ============================================================================
+# CONFIDENCE-BASED ESCALATION
+# ============================================================================
+#
+# Escalate when confidence is low
+
+confidence_model:
+  enabled: true
+
+  # Initial confidence
+  initial_confidence: 1.0
+
+  # Confidence decay per failure
+  decay_model:
+    first_failure: -0.1
+    second_failure: -0.15
+    third_failure: -0.2
+    subsequent_failures: -0.25  # Each additional failure
+
+  # Confidence boost per success
+  boost_model:
+    partial_success: +0.1
+    full_success: +0.2
+    test_pass: +0.1
+    human_validation: +0.3
+
+  # Escalation thresholds
+  escalation_thresholds:
+    confidence_high:  # >0.7
+      action: "continue"
+      message: "High confidence. Continuing."
+
+    confidence_medium:  # 0.5-0.7
+      action: "warn"
+      message: "Medium confidence. Proceed with caution."
+
+    confidence_low:  # 0.3-0.5
+      action: "escalate_optional"
+      message: "Low confidence. Human review recommended but optional."
+
+    confidence_critical:  # <0.3
+      action: "escalate_mandatory"
+      message: "Critical low confidence. Human review required."
+
+  # Automatic actions based on confidence
+  auto_actions:
+    - condition: "confidence < 0.5"
+      action: "increase_exploration"
+      description: "Low confidence: Read more files before acting"
+
+    - condition: "confidence < 0.3"
+      action: "request_alternative_approach"
+      description: "Critical low confidence: Try different approach"
+
+    - condition: "confidence < 0.2"
+      action: "pause_and_escalate"
+      description: "Dangerously low confidence: Stop and escalate"
+
+# ============================================================================
+# APPROVAL CHECKPOINTS
+# ============================================================================
+#
+# When to require human approval
+
+approval_checkpoints:
+  # Automatic checkpoints (always triggered)
+  auto:
+    story_completed:
+      enabled: true
+      action: "log_and_continue"
+      message: "Story completed. Auto-continuing to next."
+
+    quality_gates_passed:
+      enabled: true
+      action: "log_and_continue"
+      message: "All quality gates passed. Continuing."
+
+    budget_exceeded:
+      enabled: true
+      action: "block_and_require_approval"
+      message: "Budget exceeded. Human approval required to continue."
+
+  # Human approval required
+  require_human:
+    max_attempts_75_percent:
+      enabled: true
+      message: "75% of retry budget used. Continue?"
+
+    cost_ceiling_50_percent:
+      enabled: true
+      message: "50% of cost ceiling reached. Continue?"
+
+    loop_detected:
+      enabled: true
+      message: "Loop detected. How should I proceed?"
+
+    low_confidence:
+      enabled: true
+      threshold: 0.3
+      message: "Low confidence ({confidence}). Continue current approach?"
+
+  # Mandatory checkpoints (cannot override)
+  mandatory:
+    production_deployment:
+      enabled: true
+      message: "Production deployment requires human approval."
+
+    database_migration:
+      enabled: true
+      message: "Database migration requires human approval."
+
+    critical_domain_change:
+      enabled: true
+      domains:
+        - authentication
+        - authorization
+        - payment
+        - data-migration
+        - patient-data
+        - clinical-logic
+      message: "Critical domain change requires human approval."
+
+    destructive_operation:
+      enabled: true
+      operations:
+        - delete_production_data
+        - drop_table
+        - truncate_table
+      message: "Destructive operation requires human approval."
+
+# ============================================================================
+# RETRY STRATEGIES
+# ============================================================================
+#
+# How to retry when failures occur
+
+retry_strategies:
+  # Strategy 1: Exponential backoff
+  exponential_backoff:
+    enabled: true
+    initial_delay_seconds: 5
+    max_delay_seconds: 300
+    multiplier: 2.0
+    jitter: true
+
+  # Strategy 2: Alternative approach on repeated failure
+  alternative_approach:
+    enabled: true
+    trigger_after_failures: 3
+    actions:
+      - "read_more_files"
+      - "try_different_implementation"
+      - "consult_memory_for_solutions"
+      - "request_human_guidance"
+
+  # Strategy 3: Escalation on critical failures
+  critical_failure_escalation:
+    enabled: true
+    critical_patterns:
+      - "syntax_error"
+      - "import_error"
+      - "type_error"
+      - "test_failure_cascade"
+    action: "pause_and_escalate"
+
+  # Strategy 4: Mandatory pause after N consecutive failures
+  mandatory_pause:
+    enabled: true
+    failure_threshold: 5
+    pause_duration_seconds: 60
+    message: "5 consecutive failures. Taking 60s pause to reassess."
+
+# ============================================================================
+# MONITORING & ALERTS
+# ============================================================================
+
+monitoring:
+  enabled: true
+
+  metrics:
+    - name: "retry_count_per_session"
+      target: "<5"
+      warning_threshold: 10
+      critical_threshold: 20
+
+    - name: "sessions_exceeding_50_retries"
+      target: "0/month"
+      warning_threshold: "1/month"
+      critical_threshold: "5/month"
+
+    - name: "loop_detections"
+      target: "0/month"
+      warning_threshold: "5/month"
+      alert: "good"  # Loop detection = system working
+
+    - name: "confidence_below_0.5"
+      target: "<10% of sessions"
+      warning_threshold: "20% of sessions"
+      critical_threshold: "40% of sessions"
+
+  alerts:
+    high_retry_session:
+      condition: "retries > 50"
+      action: "log_and_alert"
+      message: "Session with >50 retries detected. Investigate root cause."
+
+    loop_detected:
+      condition: "loop_detection_triggered"
+      action: "log_and_alert"
+      message: "Loop detected and broken. Root cause: {pattern}"
+
+    budget_exceeded_frequently:
+      condition: "budget_exceeded_count > 5/week"
+      action: "alert_governance_team"
+      message: "Budgets exceeded frequently. Review budget settings."
+
+# ============================================================================
+# REPOSITORY-SPECIFIC OVERRIDES
+# ============================================================================
+
+# Example override for experimental repo with higher risk tolerance:
+#
+# retry_budgets:
+#   feature_medium:
+#     max_attempts: 35  # Allow more experimentation
+#     cost_ceiling_usd: 150.00
+
+allow_local_overrides: true
+local_override_file: ".claude/config/execution-budgets.local.yaml"
+
+# ============================================================================
+# END OF CONFIGURATION
+# ============================================================================

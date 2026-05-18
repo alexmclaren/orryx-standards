@@ -1,0 +1,98 @@
+# [REQUIRES HUMAN REVIEW] Canonical Orryx Group gitleaks config
+#
+# Status: STAGED TEMPLATE — not enforced by being here.
+# Source: copied from orryx-brain/.gitleaks.toml (proven, in-use; Session 118).
+# Companion to pre-commit-config.template.yaml. Adopt both together.
+#
+# Note on "Stripe test key": this config has stripe-live-* rules and an
+# ALLOWLIST that explicitly exempts sk_test_/pk_test_/whsec_test_ — Stripe
+# *test* keys are not findings by design. (Clears up the 2026-05-17 task's
+# phantom "Stripe test key family" — no such security finding exists.)
+
+title = "Orryx Group gitleaks config (canonical template)"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "anthropic-api-key-real"
+description = "Anthropic API key (real, >=80 chars after prefix)"
+regex = '''sk-ant-api03-[A-Za-z0-9_-]{80,}'''
+tags = ["key", "anthropic"]
+
+[[rules]]
+id = "stripe-live-secret"
+description = "Stripe live secret key"
+regex = '''sk_live_[A-Za-z0-9]{20,}'''
+tags = ["key", "stripe", "production"]
+
+[[rules]]
+id = "stripe-live-publishable"
+description = "Stripe live publishable key"
+regex = '''pk_live_[A-Za-z0-9]{20,}'''
+tags = ["key", "stripe", "production"]
+
+[[rules]]
+id = "stripe-live-webhook"
+description = "Stripe webhook secret (allowlist exempts whsec_test_*)"
+regex = '''whsec_[A-Za-z0-9]{32,}'''
+tags = ["key", "stripe"]
+
+[[rules]]
+id = "aws-access-key"
+description = "AWS access key ID"
+regex = '''AKIA[0-9A-Z]{16}'''
+tags = ["key", "aws"]
+
+[[rules]]
+id = "aws-secret-access-key"
+description = "AWS secret access key (heuristic — high entropy 40-char base64)"
+regex = '''(?i)aws.{0,20}?(?:secret|sk).{0,20}?['"]([A-Za-z0-9/+=]{40})['"]'''
+tags = ["key", "aws"]
+
+[[rules]]
+id = "mock-api-key-fallback"
+description = "Mock API key used as production fallback"
+regex = '''sk-ant-api03-mock-key'''
+tags = ["mock", "fallback"]
+
+[[rules]]
+id = "private-key-pem"
+description = "PEM-encoded private key block"
+regex = '''-----BEGIN ((EC|PGP|DSA|RSA|OPENSSH) )?PRIVATE KEY-----'''
+tags = ["key", "private"]
+
+[allowlist]
+description = "Allowlist for known-safe references"
+
+paths = [
+    '''(?i).*\.env\.example$''',
+    '''(?i).*\.env\.sample$''',
+    '''(?i).*\.env\.template$''',
+    '''(?i)docs/audits/.*''',
+    '''(?i)docs/decisions/.*''',
+    '''(?i)docs/security_incident.*''',
+    '''(?i).*\.gitleaks\.toml$''',
+    '''(?i).*\.pre-commit-config\.yaml$''',
+    '''.*/SESSION_STATE\.md$''',
+    '''.*/SESSION_STATE_ARCHIVE\.md$''',
+    '''.*/CHANGELOG\.md$''',
+    '''(?i).*/(test|tests|__tests__|fixtures)/.*''',
+    '''(?i).*\.test\.(js|ts|jsx|tsx|py)$''',
+    '''(?i).*\.spec\.(js|ts|jsx|tsx|py)$''',
+    '''package-lock\.json$''',
+    '''yarn\.lock$''',
+    '''(?i).*node_modules/.*''',
+]
+
+regexes = [
+    '''PLACEHOLDER_CHANGE_ME[A-Za-z0-9_]*''',
+    '''your[_-]?(api[_-]?)?key''',
+    '''(?i)example[_-]?key''',
+    '''sk-ant-api03-mock-key''',
+    '''sk_test_[A-Za-z0-9]+''',
+    '''pk_test_[A-Za-z0-9]+''',
+    '''whsec_test_[A-Za-z0-9]+''',
+    '''AKIAIOSFODNN7EXAMPLE''',
+    '''wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY''',
+]

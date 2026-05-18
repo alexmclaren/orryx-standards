@@ -1,0 +1,61 @@
+# Agent Memory Integration Template
+# Add this section to ALL agent YAML configurations
+
+# Memory tools to add to tools array
+tools:
+  - name: memory_query
+    description: "Query persistent memory for relevant context"
+    parameters:
+      query: string
+      namespaces: string[]
+      filters: object
+      top_k: number
+    implementation: "mcp://pinecone/search-records"
+
+  - name: memory_write
+    description: "Write learning or decision to persistent memory"
+    parameters:
+      content: string
+      type: MemoryType
+      metadata: PineconeMemoryMetadata
+    implementation: "mcp://pinecone/upsert-records"
+
+# Memory usage protocol - add as new top-level section
+memory_usage:
+  auto_query_triggers:
+    - before_planning
+    - before_editing_file
+    - before_architecture_decision
+    - after_debugging_success
+    - after_code_review
+
+  auto_write_triggers:
+    - session_compaction
+    - adr_created
+    - debugging_solution_found
+    - incident_resolved
+    - pattern_identified
+
+# Integration Instructions:
+# 1. Add the two tools above to the existing 'tools:' array in the agent YAML
+# 2. Add the 'memory_usage:' section as a new top-level key
+# 3. Test the agent can call memory_query and memory_write
+# 4. Verify no conflicts with existing tool names
+
+# Example integration:
+# agent:
+#   id: "engineer"
+#   tools:
+#     - name: file_read
+#       ...
+#     - name: memory_query        # ADD THIS
+#       description: "Query persistent memory for relevant context"
+#       ...
+#     - name: memory_write        # ADD THIS
+#       description: "Write learning or decision to persistent memory"
+#       ...
+#
+# memory_usage:                   # ADD THIS SECTION
+#   auto_query_triggers:
+#     - before_planning
+#     ...

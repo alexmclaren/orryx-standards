@@ -1,0 +1,473 @@
+# Codeburn Integration & Monitoring Configuration
+# Version: 1.0.0
+# Last Updated: 2026-05-18
+#
+# Real-time session monitoring and Codeburn analysis integration
+
+version: "1.0.0"
+
+# ============================================================================
+# CODEBURN OVERVIEW
+# ============================================================================
+#
+# Codeburn is the session analysis and optimization tool for Claude Code
+# This config enables:
+#   1. Real-time session monitoring
+#   2. Automatic metric collection
+#   3. Alert triggering on bad patterns
+#   4. Weekly comprehensive scans
+#   5. Integration with governance dashboard
+
+# ============================================================================
+# REAL-TIME SESSION MONITORING
+# ============================================================================
+
+session_monitoring:
+  enabled: true
+
+  # Metrics to track per session
+  metrics:
+    tokens:
+      input_tokens: true
+      cache_tokens: true
+      output_tokens: true
+      input_to_output_ratio: true  # Target: <8:1
+
+    operations:
+      read_count: true
+      write_count: true
+      edit_count: true
+      bash_count: true
+      grep_count: true
+      read_to_edit_ratio: true  # Target: >4:1
+
+    execution:
+      retry_count: true
+      loop_detected: false  # Detected by execution-budgets.yaml
+      time_elapsed: true
+      cost_accumulated: true
+
+    quality:
+      test_pass_rate: true
+      lint_errors: true
+      type_errors: true
+      security_findings: true
+
+  # Alert thresholds (immediate alerts during session)
+  immediate_alerts:
+    context_heavy:
+      condition: "input_to_output_ratio > 30:1"
+      action: "warn"
+      message: "Context-heavy session detected. Input:output ratio {ratio}:1. Consider narrowing scope."
+
+    high_retry:
+      condition: "retry_count > 50% of budget"
+      action: "warn"
+      message: "High retry count: {retry_count}. Approaching budget limit."
+
+    low_read_ratio:
+      condition: "read_to_edit_ratio < 2.0"
+      action: "warn"
+      message: "Low read:edit ratio: {ratio}:1. Read more before editing."
+
+    high_cost:
+      condition: "cost_accumulated > 50% of ceiling"
+      action: "warn"
+      message: "Cost at {percentage}% of ceiling: ${cost}/${ceiling}."
+
+# ============================================================================
+# CODEBURN ANALYSIS SCHEDULE
+# ============================================================================
+
+analysis_schedule:
+  # Real-time monitoring (during session)
+  real_time:
+    enabled: true
+    frequency: "continuous"
+    cost_per_session: 0.10
+    actions:
+      - "track_metrics"
+      - "trigger_immediate_alerts"
+      - "log_to_jsonl"
+
+  # Daily analysis (overnight)
+  daily:
+    enabled: true
+    time: "01:00 UTC"
+    cost_per_day: 2.00
+    actions:
+      - "analyze_yesterday_sessions"
+      - "identify_trends"
+      - "generate_daily_report"
+      - "alert_on_regressions"
+
+  # Weekly comprehensive scan
+  weekly:
+    enabled: true
+    day: "Sunday"
+    time: "20:00 UTC"
+    cost_per_week: 15.00
+    actions:
+      - "run_full_codeburn_analysis"
+      - "compare_to_baseline"
+      - "identify_issues"
+      - "create_github_issues"
+      - "update_governance_dashboard"
+      - "write_findings_to_pinecone"
+
+  # Monthly deep analysis
+  monthly:
+    enabled: true
+    day: 1  # First day of month
+    time: "22:00 UTC"
+    cost_per_month: 30.00
+    actions:
+      - "comprehensive_health_assessment"
+      - "roi_analysis"
+      - "optimization_recommendations"
+      - "executive_summary"
+
+# ============================================================================
+# ISSUE AUTO-CREATION
+# ============================================================================
+
+issue_creation:
+  enabled: true
+
+  # GitHub integration
+  github:
+    enabled: true
+    repo: "orryx/optimization-tracking"
+    labels:
+      - "codeburn"
+      - "optimization"
+      - "automated"
+
+  # Issue templates by finding type
+  templates:
+    context_heavy_session:
+      title: "[Codeburn] Context-heavy session detected: {session_id}"
+      labels: ["context-heavy", "token-waste"]
+      priority: "medium"
+      body: |
+        ## Context-Heavy Session Detected
+
+        **Session:** {session_id}
+        **Date:** {date}
+        **Input:Output Ratio:** {ratio}:1 (target: <8:1)
+
+        ### Metrics
+        - Input tokens: {input_tokens}
+        - Output tokens: {output_tokens}
+        - Files loaded: {files_count}
+
+        ### Root Cause Analysis
+        {root_cause}
+
+        ### Recommendation
+        {recommendation}
+
+        ### Related Sessions
+        {related_sessions}
+
+    high_retry_session:
+      title: "[Codeburn] High-retry session: {session_id} ({retry_count} retries)"
+      labels: ["high-retry", "loop-risk"]
+      priority: "high"
+      body: |
+        ## High-Retry Session Detected
+
+        **Session:** {session_id}
+        **Retry Count:** {retry_count}
+        **Budget:** {budget}
+        **Cost:** ${cost}
+
+        ### Error Pattern
+        {error_pattern}
+
+        ### Root Cause
+        {root_cause}
+
+        ### Recommendation
+        {recommendation}
+
+    low_read_ratio:
+      title: "[Codeburn] Low read:edit ratio: {session_id} ({ratio}:1)"
+      labels: ["read-before-edit", "quality"]
+      priority: "medium"
+      body: |
+        ## Low Read:Edit Ratio Detected
+
+        **Session:** {session_id}
+        **Read:Edit Ratio:** {ratio}:1 (target: >4:1)
+        **Files read:** {files_read}
+        **Files edited:** {files_edited}
+
+        ### Impact
+        {impact}
+
+        ### Recommendation
+        Enable read-before-edit governance hooks.
+
+    regression_detected:
+      title: "[Codeburn] Regression: {metric} trending worse"
+      labels: ["regression", "trend-analysis"]
+      priority: "high"
+      body: |
+        ## Regression Detected
+
+        **Metric:** {metric}
+        **Baseline:** {baseline}
+        **Current:** {current}
+        **Change:** {change}%
+
+        ### Trend
+        {trend_analysis}
+
+        ### Suspected Cause
+        {suspected_cause}
+
+        ### Action Items
+        {action_items}
+
+  # Issue creation thresholds
+  thresholds:
+    context_heavy:
+      ratio: 36.0
+      min_sessions: 3  # Create issue if 3+ sessions in a week
+
+    high_retry:
+      retry_count: 50
+      min_sessions: 2
+
+    low_read_ratio:
+      ratio: 2.0
+      min_sessions: 5
+
+    regression:
+      percentage_change: -10.0  # -10% = worse
+      confidence: 0.8
+
+# ============================================================================
+# CODEBURN FINDINGS → PINECONE INTEGRATION
+# ============================================================================
+
+pinecone_integration:
+  enabled: true
+
+  # Write Codeburn findings to Pinecone after weekly scan
+  auto_write:
+    enabled: true
+    namespace: "codeburn.findings"
+    memory_type: "codeburn-finding"
+
+  # What to write
+  write_patterns:
+    - type: "optimization_pattern"
+      when: "finding_type == 'optimization_opportunity'"
+      tags: ["optimization", "codeburn", "{specific_issue}"]
+      importance: "medium"
+
+    - type: "anti_pattern"
+      when: "finding_type == 'bad_pattern'"
+      tags: ["anti-pattern", "codeburn", "{specific_issue}"]
+      importance: "high"
+
+    - type: "trend_analysis"
+      when: "finding_type == 'trend'"
+      tags: ["trend", "codeburn", "{metric}"]
+      importance: "low"
+
+    - type: "regression_alert"
+      when: "finding_type == 'regression'"
+      tags: ["regression", "codeburn", "{metric}"]
+      importance: "critical"
+
+  # Memory content template
+  memory_template: |
+    Codeburn Finding: {title}
+
+    Type: {finding_type}
+    Severity: {severity}
+    Impact: {impact}
+
+    Description:
+    {description}
+
+    Root Cause:
+    {root_cause}
+
+    Recommendation:
+    {recommendation}
+
+    Potential Savings: {savings}
+
+# ============================================================================
+# GOVERNANCE DASHBOARD INTEGRATION
+# ============================================================================
+
+dashboard_integration:
+  enabled: true
+
+  # Update governance dashboard with Codeburn data
+  dashboard_file: "docs/governance/CODEBURN_DASHBOARD.md"
+
+  update_frequency: "weekly"
+
+  sections:
+    - name: "Executive Summary"
+      content:
+        - health_score
+        - total_sessions
+        - total_cost
+        - savings_achieved
+
+    - name: "Critical Issues"
+      content:
+        - high_severity_findings
+        - regressions
+        - immediate_action_items
+
+    - name: "Trend Analysis"
+      content:
+        - 7_day_trends
+        - 30_day_trends
+        - month_over_month_comparison
+
+    - name: "Top Issues"
+      content:
+        - context_heavy_sessions_count
+        - high_retry_sessions_count
+        - low_read_ratio_sessions_count
+        - quality_gate_failures
+
+    - name: "Optimization Backlog"
+      content:
+        - pending_optimizations
+        - estimated_savings
+        - priority_ranking
+
+    - name: "Historical Comparison"
+      content:
+        - vs_baseline
+        - vs_last_week
+        - vs_last_month
+
+# ============================================================================
+# MONITORING METRICS
+# ============================================================================
+
+monitoring_metrics:
+  # Health Score Components (0-100 scale)
+  health_score:
+    components:
+      - metric: "context_efficiency"
+        weight: 0.25
+        target: "input_to_output_ratio < 8:1"
+        scoring: "inverse"  # Lower is better
+
+      - metric: "read_before_edit_discipline"
+        weight: 0.20
+        target: "read_to_edit_ratio > 4:1"
+        scoring: "direct"  # Higher is better
+
+      - metric: "retry_efficiency"
+        weight: 0.20
+        target: "avg_retries < 5"
+        scoring: "inverse"
+
+      - metric: "quality_gates"
+        weight: 0.15
+        target: "pass_rate > 95%"
+        scoring: "direct"
+
+      - metric: "cost_efficiency"
+        weight: 0.10
+        target: "avg_cost_per_session < $10"
+        scoring: "inverse"
+
+      - metric: "session_success_rate"
+        weight: 0.10
+        target: "success_rate > 80%"
+        scoring: "direct"
+
+  # Grade thresholds
+  grades:
+    A: 90-100
+    B: 80-89
+    C: 70-79
+    D: 60-69
+    F: 0-59
+
+  # Baseline comparison
+  baseline_file: "D:\\orryx-audit\\governance\\CODEBURN_BASELINE.md"
+
+# ============================================================================
+# ALERT DESTINATIONS
+# ============================================================================
+
+alert_destinations:
+  # Log file
+  log_file:
+    enabled: true
+    path: ".claude/logs/codeburn-alerts.log"
+
+  # Dashboard (Markdown file)
+  dashboard:
+    enabled: true
+    path: "docs/governance/CODEBURN_DASHBOARD.md"
+
+  # GitHub Issues
+  github_issues:
+    enabled: true
+    repo: "orryx/optimization-tracking"
+
+  # Slack (optional - requires webhook)
+  slack:
+    enabled: false
+    webhook_url_env: "CODEBURN_SLACK_WEBHOOK"
+    channel: "#claude-code-alerts"
+
+# ============================================================================
+# COST TRACKING
+# ============================================================================
+
+cost_tracking:
+  enabled: true
+
+  # Track Codeburn analysis costs
+  analysis_costs:
+    real_time: 0.10  # per session
+    daily: 2.00
+    weekly: 15.00
+    monthly: 30.00
+
+  # Savings tracking
+  savings_calculation:
+    enabled: true
+    baseline_cost: 2055.46  # From initial Codeburn report
+    target_reduction: 50%  # Target: $1,027.73 savings
+
+  # ROI tracking
+  roi_tracking:
+    implementation_cost: 8000.00  # One-time
+    monthly_savings: 992.00  # Expected
+    break_even_months: 8.1
+
+# ============================================================================
+# REPOSITORY-SPECIFIC OVERRIDES
+# ============================================================================
+
+# Example override for experimental repo with relaxed monitoring:
+#
+# session_monitoring:
+#   immediate_alerts:
+#     context_heavy:
+#       condition: "input_to_output_ratio > 50:1"  # More lenient
+
+allow_local_overrides: true
+local_override_file: ".claude/config/codeburn.local.yaml"
+
+# ============================================================================
+# END OF CONFIGURATION
+# ============================================================================
