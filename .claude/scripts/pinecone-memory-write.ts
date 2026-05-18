@@ -406,8 +406,11 @@ Examples:
 // Export for use in hooks
 export { writeMemory, WriteMemoryOptions, MemoryMetadata, MemoryType, Importance };
 
-// Run CLI directly
-main().catch((error) => {
-  console.error('Fatal error:', error);
-  process.exit(1);
-});
+// Run CLI only if CLI-style arguments provided (not when imported as module)
+const hasCliArgs = process.argv.slice(2).some(arg => arg.startsWith('--') || arg === '-h' || arg === '--help');
+if (hasCliArgs) {
+  main().catch((error) => {
+    console.error('Fatal error:', error);
+    process.exit(1);
+  });
+}

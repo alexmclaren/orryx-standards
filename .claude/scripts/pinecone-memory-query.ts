@@ -303,8 +303,12 @@ Examples:
 // Export for use in hooks
 export { queryMemory, QueryOptions, QueryResult, MemoryMatch };
 
-// Run CLI directly
-main().catch((error) => {
-  console.error('Fatal error:', error);
-  process.exit(1);
-});
+// Run CLI only if CLI-style arguments provided (not when imported as module)
+const hasCliArgs = process.argv.slice(2).some(arg => arg.startsWith('--') || arg === '-h' || arg === '--help') ||
+                   (process.argv.length > 2 && !process.argv[2].startsWith('{'));
+if (hasCliArgs) {
+  main().catch((error) => {
+    console.error('Fatal error:', error);
+    process.exit(1);
+  });
+}

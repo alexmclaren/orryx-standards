@@ -267,7 +267,8 @@ export {
   DebuggingMemoryContext,
 };
 
-// Run if executed directly
-if (require.main === module) {
-  main();
-}
+// Run directly
+main().catch((error) => {
+  console.error('Fatal error:', error);
+  process.exit(1);
+});
