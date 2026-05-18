@@ -411,6 +411,20 @@ aws secretsmanager update-secret \
 ```
 
 **Option B: Set Environment Variable**
+
+**PowerShell (Windows - Recommended):**
+```powershell
+# Temporary (current session only)
+$env:OPENAI_API_KEY = "sk-proj-..."
+
+# Verify
+echo $env:OPENAI_API_KEY
+
+# Permanent (current user)
+[System.Environment]::SetEnvironmentVariable('OPENAI_API_KEY', 'sk-proj-...', 'User')
+```
+
+**Git Bash / Unix:**
 ```bash
 export OPENAI_API_KEY="sk-proj-..."
 # Or add to ~/.bashrc or ~/.zshrc
