@@ -85,3 +85,23 @@ bedrock-*-keys*
 NUL
 nul
 $RECYCLE.BIN/
+
+# =============================================================================
+# HA2 Credential Hygiene (2026-05-24) — Session file injection vectors
+# =============================================================================
+
+# Session files that may contain secrets
+SESSION_RESTART_*.md
+SESSION_*.md
+*_SESSION_*.md
+AWS_MIGRATION_SESSION_*.md
+
+# Backup files with embedded dates
+*_BACKUP_*.md
+*-backup-*.md
+
+# Additional secret-prone patterns
+.env.backup*
+.env.*.backup
+*.env.local
+.secrets-*
