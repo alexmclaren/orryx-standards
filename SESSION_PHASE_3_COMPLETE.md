@@ -43,7 +43,7 @@ Fixed ES module compatibility issues in 4 core scripts:
 ### 4. Memory Content Available
 
 **Architecture Knowledge (15 ADRs):**
-- FastAPI, Next.js, Railway deployment
+- FastAPI, Next.js, AWS ECS deployment
 - Stripe payments, YOLOv8 detection
 - Multi-agent orchestration, database selection
 - Cache strategy, vector databases
