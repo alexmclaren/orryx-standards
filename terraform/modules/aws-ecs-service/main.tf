@@ -88,19 +88,15 @@ resource "aws_ecs_service" "main" {
     container_port   = var.container_port
   }
 
-  deployment_configuration {
-    maximum_percent         = 200
-    minimum_healthy_percent = 100
-  }
+  deployment_maximum_percent         = 200
+  deployment_minimum_healthy_percent = 100
 
-  enable_execute_command = var.enable_exec  # For debugging
+  enable_execute_command = var.enable_exec # For debugging
 
   tags = merge(var.tags, {
     Name        = "${var.service_name}-${var.environment}"
     Environment = var.environment
   })
-
-  depends_on = [var.target_group_arn]
 }
 
 # Security Group for ECS Tasks
