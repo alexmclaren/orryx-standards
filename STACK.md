@@ -1,15 +1,16 @@
 # STACK.md — Orryx Group Canonical Technology Stack
 
-**Version:** 0.9.0 (PROVISIONAL — two open decisions block 1.0.0; see "Open decisions" below)
-**Drafted:** 2026-06-10
-**Status:** Provisional. Most layers are settled; **the container-platform choice (ECS vs EKS) is NOT yet ratified** pending the Pillarworks EKS-driver investigation, and the consulting-distribution model has unresolved client-fit and access-control questions. Do not template `orryx-product-template` until v1.0.0.
+**Version:** 0.9.1 (PROVISIONAL — ONE open decision blocks 1.0.0)
+**Drafted:** 2026-06-10 · **Updated:** 2026-06-10 (ADR-STACK-001 resolved → ECS canonical)
+**Status:** Provisional. **Container platform is now SETTLED: ECS Fargate canonical** (ADR-STACK-001 closed — the Pillarworks "EKS" turned out to be an undocumented out-of-band accident, verified against git + live AWS; Pillarworks migrates back to ECS). The only remaining v1.0.0 blocker is the consulting-distribution model (ADR-STACK-002: org migration + client-fit). Do not template `orryx-product-template` until v1.0.0.
 **Authority:** Intended single source of truth for Orryx Group stack choices once ratified. Referenced from [CLAUDE.base.md](CLAUDE.base.md). ADRs in `decisions/` are STUBS pending the open decisions — they do not yet justify the choices; they record what must be decided.
 
 > **How to use:** This is a decision-forcing draft, not yet a mandate. When v1.0.0 lands, new products start from `orryx-product-template` and any deviation goes in the Divergence Register with a rationale + review date.
 
-> **⚠️ Open decisions blocking v1.0.0** (raised by adversarial review 2026-06-10):
-> 1. **ECS vs EKS** — ECS is *proposed* canonical, but the rationale ("only an ECS Terraform module exists") is path dependency, and the group's most-production product (Pillarworks, 147+ days) deliberately runs EKS. **Resolve by investigating the actual EKS driver** (git-history + ops reality) BEFORE ratifying. If the driver is a real constraint (multi-tenancy, GPU, client K8s requirement), EKS may be canonical and ECS the accident. → `decisions/ADR-STACK-001-container-platform.md` (stub)
-> 2. **Consulting distribution** — "factory == consulting deliverable" assumes every client wants AWS + ECS + Terraform + a marketplace sourced from a *personal* GitHub account (`alexmclaren/orryx-knowledge`). That fails no-AWS / GCP-Azure / on-prem / data-sovereignty clients and carries bus-factor + access-control risk. **Resolve by (a) de-personalizing the marketplace to an `orryx-group` org, and (b) stating in-/out-of-scope client contexts.** → ties to audit decision Q-F (GitHub org migration).
+> **✅ RESOLVED — ECS vs EKS** (ADR-STACK-001, 2026-06-10): **ECS Fargate canonical.** The W0.3 investigation (git + live AWS) found the Pillarworks "EKS" was an undocumented out-of-band pivot, not a decision — EKS cluster stood up 2026-04-29 with zero commits, discovered 3 weeks later via kubectl recon; no workload needs Kubernetes. Pillarworks migrates EKS→ECS. The "147-day production EKS" counter-evidence dissolved on inspection.
+>
+> **⚠️ Open decision still blocking v1.0.0:**
+> **Consulting distribution** — "factory == consulting deliverable" assumes every client wants AWS + ECS + Terraform + a marketplace sourced from a *personal* GitHub account (`alexmclaren/orryx-knowledge`). That fails no-AWS / GCP-Azure / on-prem / data-sovereignty clients and carries bus-factor + access-control risk. **Resolve by (a) de-personalizing the marketplace to an `orryx-group` org, and (b) stating in-/out-of-scope client contexts.** → `decisions/ADR-STACK-002-consulting-distribution.md`; ties to audit decision Q-F (GitHub org migration).
 
 ---
 
@@ -17,7 +18,7 @@
 
 | Layer | Canonical choice | Rationale (summary) |
 |---|---|---|
-| **Containers** | **AWS ECS Fargate** *(PROPOSED — not ratified; see Open Decision 1)* | Lower ops burden at current team size; Triora + MCP gateway run it; ECS Terraform module exists. **Counter-evidence:** Pillarworks chose EKS for production and has run it 147+ days — investigate that driver before ratifying. "No EKS module exists" is a reason the module is missing, not a reason EKS is wrong. |
+| **Containers** | **AWS ECS Fargate** *(SETTLED — ADR-STACK-001)* | Lower ops burden at team size; Triora + MCP gateway + orryx-prod-api all run it; ECS Terraform module exists. The Pillarworks "EKS" was an out-of-band accident (no ADR, no commits, discovered via kubectl recon), not a decision; no workload needs k8s. Pillarworks migrates back. No EKS module will be built. |
 | **Frontend** | **Vite + React → S3 + CloudFront** | Deploy target is static hosting (Vercel removed 2026-06); SSR/ISR value of Next.js is largely moot without a Node edge; 2 of 3 products + orryx.dev are Vite; Magic Patterns pipeline outputs Vite |
 | **Backend** | **FastAPI, Python 3.11+** | Universal across all three products; strongest convergence point |
 | **Data** | **AWS RDS PostgreSQL** (+ ElastiCache Redis where caching/sessions needed) | Universal; `terraform/modules/aws-rds-postgres` exists |
@@ -51,7 +52,7 @@ Existing products predate ratification. Each divergence has a rationale and a **
 
 | Product | Divergence from canonical | Rationale | Review date / action |
 |---|---|---|---|
-| **Pillarworks** | EKS (not ECS) | Adopted mid-flight; audit trail shows ECS was the original target. EKS control-plane ~$73/mo + duplicate-cluster overhead. | **BLOCKS v1.0.0.** Investigate driver NOW (Open Decision 1). **Convergence trigger:** either (a) driver is a real constraint → promote EKS to a second canonical tier with its own Terraform module, OR (b) no driver → the next major Pillarworks infra change migrates to ECS. No permanent middle. |
+| **Pillarworks** | EKS (not ECS) | Out-of-band accident (ADR-STACK-001), not a choice. EKS control-plane ~$72/mo of pure overhead. | **Convergence trigger SET: migrate EKS→ECS Fargate.** Dedicated migration (human-gated, touches prod): ALB-Ingress → listener rules + 2 target groups; IRSA → task roles; ESO → native Secrets Manager. EKS cluster `pillarworks-prod` (us-east-1) deleted on completion. |
 | **Pillarworks** | Next.js (not Vite) | Mature production frontend; static-export keeps S3+CloudFront deploy | No forced change. Next.js is the blessed escape hatch for SEO-critical marketing properties. |
 | **Pillarworks** | n8n / airflow (not Temporal) | BOQ orchestration built pre-ratification | Acceptable for internal automation; do not template. Re-evaluate only if it touches a product-critical path. |
 | **Triora** | — (conformant: ECS Fargate, FastAPI, Postgres, Temporal) | The reference implementation | Closest to canonical; use as the worked example. |
