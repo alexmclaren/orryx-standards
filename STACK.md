@@ -1,16 +1,13 @@
 # STACK.md — Orryx Group Canonical Technology Stack
 
-**Version:** 0.9.1 (PROVISIONAL — ONE open decision blocks 1.0.0)
-**Drafted:** 2026-06-10 · **Updated:** 2026-06-10 (ADR-STACK-001 resolved → ECS canonical)
-**Status:** Provisional. **Container platform is now SETTLED: ECS Fargate canonical** (ADR-STACK-001 closed — the Pillarworks "EKS" turned out to be an undocumented out-of-band accident, verified against git + live AWS; Pillarworks migrates back to ECS). The only remaining v1.0.0 blocker is the consulting-distribution model (ADR-STACK-002: org migration + client-fit). Do not template `orryx-product-template` until v1.0.0.
-**Authority:** Intended single source of truth for Orryx Group stack choices once ratified. Referenced from [CLAUDE.base.md](CLAUDE.base.md). ADRs in `decisions/` are STUBS pending the open decisions — they do not yet justify the choices; they record what must be decided.
+**Version:** 1.0.0 (RATIFIED — both blocking ADRs closed)
+**Drafted:** 2026-06-10 · **Ratified:** 2026-06-10
+**Status:** Ratified. The Orryx product factory templates this stack; new products MUST conform or register a divergence with a convergence trigger. Both prior blockers are closed: ADR-STACK-001 (ECS Fargate canonical) and ADR-STACK-002 (engagement-delivery model).
+**Authority:** Single source of truth for Orryx Group stack choices. Referenced from [CLAUDE.base.md](CLAUDE.base.md). Backed by ADRs in `decisions/`.
 
-> **How to use:** This is a decision-forcing draft, not yet a mandate. When v1.0.0 lands, new products start from `orryx-product-template` and any deviation goes in the Divergence Register with a rationale + review date.
-
-> **✅ RESOLVED — ECS vs EKS** (ADR-STACK-001, 2026-06-10): **ECS Fargate canonical.** The W0.3 investigation (git + live AWS) found the Pillarworks "EKS" was an undocumented out-of-band pivot, not a decision — EKS cluster stood up 2026-04-29 with zero commits, discovered 3 weeks later via kubectl recon; no workload needs Kubernetes. Pillarworks migrates EKS→ECS. The "147-day production EKS" counter-evidence dissolved on inspection.
+> **✅ ADR-STACK-001 — ECS vs EKS (RESOLVED):** **ECS Fargate canonical.** The W0.3 investigation (git + live AWS) found the Pillarworks "EKS" was an undocumented out-of-band pivot, not a decision — EKS cluster stood up 2026-04-29 with zero commits, discovered 3 weeks later via kubectl recon; no workload needs Kubernetes. Pillarworks migrates EKS→ECS. The "147-day production EKS" counter-evidence dissolved on inspection.
 >
-> **⚠️ Open decision still blocking v1.0.0:**
-> **Consulting distribution** — "factory == consulting deliverable" assumes every client wants AWS + ECS + Terraform + a marketplace sourced from a *personal* GitHub account (`alexmclaren/orryx-knowledge`). That fails no-AWS / GCP-Azure / on-prem / data-sovereignty clients and carries bus-factor + access-control risk. **Resolve by (a) de-personalizing the marketplace to an `orryx-group` org, and (b) stating in-/out-of-scope client contexts.** → `decisions/ADR-STACK-002-consulting-distribution.md`; ties to audit decision Q-F (GitHub org migration).
+> **✅ ADR-STACK-002 — Engagement-delivery model (RESOLVED):** Orryx is **NOT** publishing a public/self-serve marketplace. The marketplace + stack are **internal engagement tooling**; Orryx operators use them to deliver client products, and the client never consumes or authenticates into a marketplace. This removes the client-fit and personal-namespace blockers. The background model (Claude tier, plugin set) is swappable as AI advances. `orryx-group` org migration is recommended for credibility/continuity before the first client engagement, but is no longer a blocker.
 
 ---
 
@@ -70,7 +67,7 @@ Existing products predate ratification. Each divergence has a rationale and a **
 
 Each canonical choice is (or will be) an ADR in `orryx-standards/decisions/` or the relevant repo's ADR folder:
 
-- **ADR: ECS Fargate over EKS** — control-plane cost + ops burden vs team size; existing module + product weight; EKS retained only as a registered Pillarworks divergence pending driver investigation.
+- **ADR-STACK-001: ECS Fargate over EKS (RESOLVED)** — the Pillarworks "EKS" was an undocumented out-of-band accident (no ADR, no commits, discovered via kubectl recon), not a decision; no workload needs k8s. Pillarworks migrates EKS→ECS; no EKS module built.
 - **ADR: Vite over Next.js (default)** — static S3+CloudFront deploy removes most SSR value; Next.js as SEO escape hatch.
 - **ADR: Temporal for product-critical workflows** — durability/auditability for AI pipelines; n8n confined to internal automation.
 - **ADR-106 (existing): Outcome-based provider router** — verified REAL working code; Anthropic primary, Bedrock for residency.
@@ -78,24 +75,19 @@ Each canonical choice is (or will be) an ADR in `orryx-standards/decisions/` or 
 
 ---
 
-## Consulting application — fit and limits
+## Engagement-delivery model (ADR-STACK-002)
 
-The aspiration: a client gets a product scaffolded from `orryx-product-template` plus the Orryx marketplace installed in their repo, giving them the same skills the Orryx team uses. **But "factory == consulting deliverable" is an assumption with real limits, not a settled strength.**
+Orryx does **not** publish a public or self-serve marketplace. The marketplace + stack are **internal engagement tooling**: Orryx operators use them to deliver a client's product. The client receives a working product; they never consume, authenticate into, or self-serve any Orryx marketplace. This is the resolved model — it removes the client-fit and personal-namespace concerns that an earlier "self-serve marketplace" framing carried.
 
-**In scope (stack fits as-is):** client is on AWS, willing to use ECS/Fargate + Terraform, can authenticate to the (de-personalized) Orryx marketplace, no hard data-sovereignty blocker.
+**Two separable layers:**
+1. **Agent layer** (marketplace plugins, CLAUDE/AGENTS conventions, safety hooks) — Orryx's internal delivery toolkit. Cloud-neutral; the **operator brings it** to each engagement. The background model (Claude tier, plugin set) is swappable as AI advances — STACK.md references the *capability*, not a frozen model, so upgrades need only a version bump.
+2. **Infra layer** (ECS Fargate / Vite / FastAPI / Terraform / AWS) — Orryx's reference stack, **adapted to the client's cloud/constraints per engagement.**
 
-**Out of scope / needs adaptation (the stack actively fails these):**
-- **No AWS / GCP or Azure shop** — the IaC + ECS layer doesn't transfer; only the agent layer (marketplace + CLAUDE/AGENTS conventions) is cloud-neutral.
-- **On-prem / air-gapped** — no cloud deploy path; marketplace must be self-hostable.
-- **Data-sovereignty regimes** — Bedrock-residency helps for AU but isn't a general answer.
-- **Clients who can't/won't auth into a private GitHub marketplace.**
+**Client-context fit is an engagement-scoping matter, not a distribution blocker.** A non-AWS, GCP/Azure, on-prem, or data-sovereignty client changes how Orryx adapts the *infra layer* for that engagement; the agent layer travels with the operator regardless. There is no requirement for the client to host or authenticate into the marketplace.
 
-**Hard prerequisite before ANY client engagement uses the marketplace:** it must be moved off the personal `alexmclaren/orryx-knowledge` namespace to an `orryx-group` org (ties to audit decision Q-F). A personal-account private marketplace is a bus-factor and access-control liability for paid external delivery.
+**`orryx-group` org migration — recommended, non-blocking.** Sourcing internal tooling from a personal account (`alexmclaren/...`) carries bus-factor risk and weaker professional optics (a client glimpsing `github.com/alexmclaren/...` during a paid engagement). Migrate to `orryx-group` before the first client engagement; founder-timed, no longer gating STACK.md or the factory.
 
-**Decomposition for consulting:** treat the stack as two separable layers —
-1. **Agent layer** (marketplace, CLAUDE/AGENTS conventions, safety hooks) — cloud-neutral, the portable consulting asset.
-2. **Infra layer** (ECS/Vite/Terraform/AWS) — Orryx's *reference* stack, adapted per client cloud.
-The marketplace must stay CLI-valid and installable regardless (the WC.0 fix, 2026-06-10, was the precondition).
+The marketplace must stay CLI-valid and installable for Orryx's own internal use (the WC.0 fix, 2026-06-10, was the precondition; live-validated in WC.3).
 
 ---
 
