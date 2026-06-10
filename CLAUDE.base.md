@@ -1,9 +1,9 @@
 # CLAUDE.base.md — Canonical Claude Execution Protocol
 
-**Version:** 2.0.0
-**Last Updated:** 2026-05-18
+**Version:** 2.1.0
+**Last Updated:** 2026-06-10
 **Status:** Production Ready
-**Changes:** Added context management, read-before-edit governance, retry governance, Pinecone integration
+**Changes:** Restored Perpetual Improvement System + clinical-era gates lost in v2 migration; added proactive subagent mandate, confidence hard gate, Problem Record convention
 
 > This is the **canonical source of truth** for Claude Code behavior across all Orryx repositories.
 > Individual repos reference this file and add minimal overrides only.
@@ -669,6 +669,230 @@ writeMemory({
 
 ---
 
+# 18. PERPETUAL IMPROVEMENT SYSTEM
+
+Every session must leave the operational system better than it started. This is non-optional.
+
+## 18.1 Improvement Mandate
+
+Every meaningful task is an opportunity to:
+- Identify repeated patterns
+- Convert friction into automation
+- Build reusable capabilities
+- Compound system value over time
+
+## 18.2 Reuse-First Protocol (Check Before Create)
+
+Before creating ANY new logic, check in this exact order:
+
+```
+1. CLAUDE.md ───→ Is this already a documented rule/protocol?
+2. Docs ─────────→ Is this already in /docs/?
+3. Skills ───────→ Is this already a skill in /.claude/skills/?
+4. Agents ───────→ Is this already an agent in /.claude/agents/?
+5. Hooks ────────→ Is this already a hook in .git/hooks/?
+6. Scripts ──────→ Is this already a script in /scripts/?
+7. Templates ────→ Is there a template in /.claude/templates/?
+8. Commands ─────→ Is this already a slash command?
+
+If YES → REUSE (with citation)
+If NO → ASSESS: Should this become an asset?
+```
+
+**Anti-pattern:** Creating new logic without checking what exists.
+
+## 18.3 Asset Discovery Hierarchy
+
+| Asset Type | Discovery Method | Location |
+|------------|------------------|----------|
+| Rules | Read CLAUDE.md | Root |
+| Skills | Repo CLAUDE.md or /.claude/skills/ | Skills catalog |
+| Agents | Repo CLAUDE.md or /.claude/agents/ | Agents catalog |
+| Scripts | /scripts/ | Scripts directory |
+| Hooks | .git/hooks/ | Hooks directory |
+| Protocols | /docs/protocols/ or /docs/operations/ | Documentation |
+| Templates | /.claude/templates/ | Templates directory |
+
+**When uncertain:** Use `explorer` agent to scan for existing assets.
+
+## 18.4 End-of-Task Reflection Loop (MANDATORY)
+
+After completing any meaningful task, answer:
+
+1. **What was repeated?** (Similar analysis, lookups, or code performed multiple times)
+2. **What caused friction?** (Took longer than expected, required manual intervention, was error-prone)
+3. **What should be reusable?** (Is this pattern likely to recur, would it benefit future tasks)
+4. **What should be created or updated?** (New skill, agent, script, hook, protocol, template, or doc update)
+
+**Action required if any answer is "yes":**
+- Create the asset (if time permits and value is high), OR
+- Add to Workflow Asset Backlog (`.claude/WORKFLOW_BACKLOG.md`), OR
+- Document in session summary for future action
+
+## 18.5 Asset Creation Triggers
+
+| Asset Type | Create When | Example |
+|------------|-------------|---------|
+| **Skill** | Cognitive workflow used 2+ times OR likely to recur | Multi-consumer secret rotation planning |
+| **Agent** | Specialized role needed 3+ times OR complex enough to warrant isolation | Terraform plan reviewer |
+| **Hook** | Deterministic trigger needed on git events | Auto-run linter on pre-commit |
+| **Script** | Operational task repeated 2+ times OR needs CLI access | Rotate secret and update ECS |
+| **Protocol** | Structured multi-step process used 2+ times | Day 0 verification checklist |
+| **Template** | Pattern repeated 3+ times with minor variations | Security remediation plan |
+| **Doc Update** | Knowledge gap identified OR new pattern established | Cross-region latency troubleshooting |
+
+**Threshold: if a pattern appears twice, assess. If three times, create the asset.**
+
+## 18.6 Token Efficiency Hierarchy
+
+Externalize repeated logic to minimize token usage (most to least efficient):
+
+1. **Script / Hook** → Zero tokens (pure execution or automated trigger)
+2. **Template** → Low tokens (fill-in-the-blanks)
+3. **Protocol** → Low tokens (structured checklist)
+4. **Skill** → Medium tokens (on-demand knowledge)
+5. **Agent** → Medium tokens (isolated context)
+6. **Inline Logic** → HIGH tokens (repeated analysis — avoid)
+
+**Target:** Convert repeated logic (3+ uses) into a more efficient asset type.
+
+## 18.7 Documentation Discipline
+
+When creating or updating assets:
+1. **Document:** Purpose, usage, examples, dependencies
+2. **Integrate:** Add to repo's asset catalog section, link from relevant sections
+3. **Make discoverable:** Follow naming conventions, include keywords
+4. **Prevent duplication:** Check if similar asset exists, consolidate overlap, remove old versions
+
+## 18.8 Autonomous Uplift Rule
+
+Improve the system during execution when all four conditions hold:
+- **Safe:** No risk of breaking existing workflows
+- **Valuable:** Clear benefit to future tasks
+- **Scoped:** Completable within current task time
+- **Non-blocking:** Does not delay primary objective
+
+**Proceed without permission:** Adding docs, creating templates, updating catalogs, writing non-destructive scripts.
+**Wait for permission:** Modifying core CLAUDE.md rules, changing agent/hook behavior, updating production systems.
+
+## 18.9 Workflow Asset Backlog
+
+**Location:** `.claude/WORKFLOW_BACKLOG.md`
+**Purpose:** Track high-value improvements not completed during tasks.
+**Maintenance:** Review at sprint planning; prioritize by frequency × time savings.
+
+---
+
+# 19. PROACTIVE SUBAGENT USAGE
+
+Each repository's CLAUDE.md overrides MUST maintain a scenario → agent/skill trigger table. Claude MUST invoke matching agents unprompted — do not wait to be asked.
+
+## 19.1 Canonical Trigger Table (repo-agnostic defaults)
+
+| Scenario | Asset | When |
+|----------|-------|------|
+| Codebase exploration / "where is X" | `explorer` agent | Map phase; any unfamiliar code |
+| Test generation needed | `test-writer` agent | Act phase (TDD) |
+| Code complete, before commit | `code-reviewer` agent | Validate phase |
+| Security / compliance concern | `security-reviewer` agent | Any auth or sensitive-data change |
+| Production bug reported | `pr-investigator` agent | User reports production issue |
+| Database migration needed | `migration-writer` agent | Schema change work |
+| Documentation update needed | `doc-writer` agent | After significant code changes |
+| Domain-specific context needed | Repo-defined skill | When context signals domain topic |
+
+**Repo overrides** extend or replace rows in their own CLAUDE.md override section.
+
+---
+
+# 20. HUMAN REVIEW CONFIDENCE GATE
+
+This section supplements §7 (Human Review Boundaries) with an explicit hard gate.
+
+## 20.1 Hard Gate Rule
+
+**Confidence < 0.85 on any critical path → STOP immediately.**
+
+Tag the output `[REQUIRES HUMAN REVIEW]` and do not proceed autonomously.
+
+Critical paths include (but are not limited to):
+- Clinical or patient-safety logic
+- Privacy / PHI handling decisions
+- Compliance interpretations
+- Production data operations
+- Authentication or authorization changes
+- Any output where an error could cause patient harm or regulatory breach
+
+## 20.2 Confidence Scoring
+
+Score 0.0–1.0 before finalizing any critical-path change:
+
+| Score | Meaning | Action |
+|-------|---------|--------|
+| ≥ 0.85 | Sufficient confidence | Proceed autonomously |
+| 0.50–0.84 | Uncertain | Iterate (max 3 loops); escalate if still < 0.85 |
+| < 0.50 | Low confidence | **MANDATORY** human escalation; tag `[REQUIRES HUMAN REVIEW]` |
+
+## 20.3 Escalation Format
+
+```markdown
+[REQUIRES HUMAN REVIEW]
+
+**Confidence:** {score} (below 0.85 threshold)
+**Path:** {what critical path triggered this}
+**Issue:** {brief description}
+**What I tried:** {approaches attempted}
+**Why uncertain:** {analysis}
+**Options:**
+- Option A: {description, estimated confidence}
+- Option B: {description, estimated confidence}
+**Recommendation:** {which option and why}
+```
+
+---
+
+# 21. PROBLEM RECORD (PR) CONVENTION
+
+## 21.1 Numbering and Priority
+
+Every production incident or bug is assigned a sequential Problem Record ID:
+
+```
+PR-001, PR-002, PR-003, ...
+```
+
+Tracked in **SESSION_STATE.md** under a `## Problem Records` heading.
+
+**Priority tiers:**
+
+| Tier | Criteria | Response |
+|------|----------|----------|
+| P0 | Production down, data loss, patient safety, security breach | Immediate — drop everything |
+| P1 | Major feature broken, significant user impact, compliance risk | Same session — within hours |
+| P2 | Minor bug, degraded UX, non-blocking issue | Next sprint / backlog |
+
+## 21.2 PR Process
+
+1. **Document** — Assign PR-XXX ID, record symptom, set P0/P1/P2, add to SESSION_STATE.md
+2. **Investigate** — Trace full request flow; read source files; check recent commits
+3. **Root Cause** — Identify failure point(s); verify hypotheses; document WHY (not just what)
+4. **Fix** — Comprehensive fix (no patches); add debug logging; write/update tests
+5. **Deploy & Verify** — Commit message includes `PR-XXX`; push; confirm resolution in production
+
+**Resolution criteria:** Root cause documented, fix tested, deployed, user confirms resolved, SESSION_STATE.md updated.
+
+## 21.3 SESSION_STATE.md Tracking Format
+
+```markdown
+## Problem Records
+
+| ID | Priority | Status | Summary | Opened | Resolved |
+|----|----------|--------|---------|--------|----------|
+| PR-001 | P1 | Resolved | {brief description} | {date} | {date} |
+| PR-002 | P0 | Open | {brief description} | {date} | — |
+```
+
+---
+
 # APPENDIX A: REPO-SPECIFIC OVERRIDES
 
 This section is **intentionally empty** in the canonical baseline.
@@ -699,6 +923,7 @@ Individual repositories add their overrides in their own CLAUDE.md:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.1.0 | 2026-06-10 | Restored Perpetual Improvement System (§18) + clinical-era gates lost in v2 migration; added proactive subagent mandate (§19), confidence hard gate (§20), Problem Record convention (§21) |
 | 2.0.0 | 2026-05-18 | Added context management (§9), read-before-edit governance (§11), retry governance (§12), Pinecone integration (§13) |
 | 1.0.0 | 2026-04-27 | Initial canonical baseline |
 
