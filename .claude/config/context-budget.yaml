@@ -1,0 +1,435 @@
+# Context Management & Budget Configuration
+# Version: 1.0.0
+# Last Updated: 2026-05-18
+#
+# Enforces token budgets per task type to prevent context bloat
+# Addresses Codeburn finding: 148 context-heavy sessions with 36-40:1 input/cache-to-output ratios
+
+version: "1.0.0"
+
+# ============================================================================
+# TASK-SCOPED CONTEXT BUDGETS
+# ============================================================================
+#
+# Different task types have different context requirements
+# Budget = maximum tokens allowed in context before warning/blocking
+
+task_budgets:
+  # Simple tasks
+  typo_fix:
+    max_tokens: 2000
+    recommended_tokens: 1000
+    description: "Simple typo or formatting fixes"
+    typical_files: 1
+    enforcement: "soft"
+
+  documentation:
+    max_tokens: 5000
+    recommended_tokens: 3000
+    description: "Documentation updates"
+    typical_files: 1-2
+    enforcement: "soft"
+
+  # Medium tasks
+  bug_fix_simple:
+    max_tokens: 15000
+    recommended_tokens: 10000
+    description: "Simple bug fixes with clear root cause"
+    typical_files: 2-4
+    enforcement: "soft"
+
+  refactor_small:
+    max_tokens: 20000
+    recommended_tokens: 15000
+    description: "Small refactoring within single module"
+    typical_files: 3-5
+    enforcement: "soft"
+
+  # Complex tasks
+  bug_fix_complex:
+    max_tokens: 50000
+    recommended_tokens: 35000
+    description: "Complex bug requiring investigation"
+    typical_files: 5-10
+    enforcement: "hard"
+
+  feature_small:
+    max_tokens: 80000
+    recommended_tokens: 60000
+    description: "Small feature implementation"
+    typical_files: 5-15
+    enforcement: "hard"
+
+  feature_medium:
+    max_tokens: 150000
+    recommended_tokens: 100000
+    description: "Medium feature implementation"
+    typical_files: 10-30
+    enforcement: "hard"
+
+  feature_large:
+    max_tokens: 250000
+    recommended_tokens: 180000
+    description: "Large feature implementation"
+    typical_files: 20+
+    enforcement: "hard"
+
+  # Special tasks
+  architecture_decision:
+    max_tokens: 100000
+    recommended_tokens: 70000
+    description: "Architecture design and ADR creation"
+    typical_files: 10-20
+    enforcement: "soft"
+
+  investigation:
+    max_tokens: 120000
+    recommended_tokens: 80000
+    description: "Thorough codebase investigation"
+    typical_files: 15-40
+    enforcement: "soft"
+
+  debugging_session:
+    max_tokens: 80000
+    recommended_tokens: 50000
+    description: "Debugging session with error investigation"
+    typical_files: 5-15
+    enforcement: "hard"
+
+# ============================================================================
+# AUTOMATIC TASK CLASSIFICATION
+# ============================================================================
+#
+# Rules to automatically classify tasks based on description and files
+
+auto_classification:
+  enabled: true
+
+  rules:
+    - pattern: "(?i)(typo|formatting|whitespace|comment)"
+      task_type: "typo_fix"
+      confidence: 0.9
+
+    - pattern: "(?i)(document|readme|docs|comment)"
+      task_type: "documentation"
+      confidence: 0.8
+
+    - pattern: "(?i)(bug|fix|error|issue)"
+      files_count: "<5"
+      task_type: "bug_fix_simple"
+      confidence: 0.7
+
+    - pattern: "(?i)(bug|fix|error|issue)"
+      files_count: ">=5"
+      task_type: "bug_fix_complex"
+      confidence: 0.7
+
+    - pattern: "(?i)(refactor|clean|simplify)"
+      files_count: "<8"
+      task_type: "refactor_small"
+      confidence: 0.8
+
+    - pattern: "(?i)(feature|implement|add)"
+      files_count: "<10"
+      task_type: "feature_small"
+      confidence: 0.7
+
+    - pattern: "(?i)(feature|implement|add)"
+      files_count: "10-30"
+      task_type: "feature_medium"
+      confidence: 0.7
+
+    - pattern: "(?i)(feature|implement|add)"
+      files_count: ">30"
+      task_type: "feature_large"
+      confidence: 0.7
+
+    - pattern: "(?i)(architecture|adr|design|pattern)"
+      task_type: "architecture_decision"
+      confidence: 0.9
+
+    - pattern: "(?i)(investigate|explore|understand|analyze)"
+      task_type: "investigation"
+      confidence: 0.8
+
+    - pattern: "(?i)(debug|trace|diagnose)"
+      task_type: "debugging_session"
+      confidence: 0.8
+
+  # Fallback if no match
+  default_task_type: "feature_medium"
+
+# ============================================================================
+# CONTEXT RESET TRIGGERS
+# ============================================================================
+#
+# Conditions that should trigger automatic context reset
+
+reset_triggers:
+  # Trigger 1: Task completion
+  task_completion:
+    enabled: true
+    action: "offer_reset"  # offer | auto | warn
+    message: "Task complete. Reset context for next task?"
+
+  # Trigger 2: Context drift (loaded context not used recently)
+  context_drift:
+    enabled: true
+    time_threshold_minutes: 30
+    usage_threshold: 0.2  # If <20% of context used in last 30min
+    action: "offer_reset"
+    message: "Context hasn't been used recently. Reset to free up tokens?"
+
+  # Trigger 3: Token budget exceeded
+  budget_exceeded:
+    enabled: true
+    threshold_percentage: 80  # Warn at 80% of budget
+    action: "warn"
+    message: "Context budget at {percentage}%. Consider resetting or narrowing scope."
+
+    hard_limit_percentage: 95  # Block at 95%
+    hard_action: "block_and_offer_reset"
+    hard_message: "Context budget exceeded. Must reset or reduce scope to continue."
+
+  # Trigger 4: Session duration
+  session_duration:
+    enabled: true
+    duration_hours: 2
+    action: "offer_reset"
+    message: "Session has been running for {hours} hours. Consider fresh start?"
+
+  # Trigger 5: Story boundary (every 3 stories)
+  story_boundary:
+    enabled: true
+    story_count: 3
+    action: "auto_summarize_and_compact"
+    message: "Auto-compacting after 3 stories. Summarizing context..."
+
+# ============================================================================
+# STAGED EXECUTION PATTERN
+# ============================================================================
+#
+# Load context STAGE BY STAGE, not all upfront
+# Example: Design → Implementation → Testing → Documentation
+
+staged_execution:
+  enabled: true
+
+  stages:
+    design:
+      max_tokens: 20000
+      includes:
+        - architecture_docs
+        - related_adrs
+        - similar_patterns
+        - requirements
+      excludes:
+        - test_files
+        - implementation_details
+
+    implementation:
+      max_tokens: 50000
+      includes:
+        - target_files
+        - dependencies (1 level)
+        - related_tests
+        - relevant_patterns
+      excludes:
+        - unrelated_modules
+        - documentation
+
+    testing:
+      max_tokens: 30000
+      includes:
+        - implementation_files
+        - test_files
+        - test_patterns
+        - fixtures
+      excludes:
+        - unrelated_tests
+        - documentation
+
+    documentation:
+      max_tokens: 15000
+      includes:
+        - readme_files
+        - api_docs
+        - changelog
+        - implementation_summary
+      excludes:
+        - implementation_details
+        - test_files
+
+  # Stage transitions
+  transitions:
+    design_to_implementation:
+      action: "summarize_and_load_next"
+      summary_target_tokens: 5000
+
+    implementation_to_testing:
+      action: "summarize_and_load_next"
+      summary_target_tokens: 8000
+
+    testing_to_documentation:
+      action: "summarize_and_load_next"
+      summary_target_tokens: 5000
+
+# ============================================================================
+# WORKING MEMORY SUMMARIZATION
+# ============================================================================
+#
+# Compress detailed context to summaries, keep only what's needed
+
+auto_summarization:
+  enabled: true
+
+  triggers:
+    - condition: "stories_completed % 3 == 0"
+      action: "summarize_and_compact"
+      target_tokens: 5000
+      description: "Every 3 stories"
+
+    - condition: "session_duration_minutes > 60"
+      action: "summarize_and_compact"
+      target_tokens: 8000
+      description: "Every 60 minutes"
+
+    - condition: "context_tokens > budget * 0.8"
+      action: "aggressive_summarization"
+      target_tokens: 10000
+      description: "When approaching budget limit"
+
+  summarization_strategy:
+    # What to keep in detail
+    keep_detailed:
+      - current_file_being_edited
+      - active_test_failures
+      - recent_error_messages
+      - current_task_description
+
+    # What to summarize
+    summarize:
+      - completed_work
+      - files_already_modified
+      - passing_tests
+      - successful_investigations
+      - resolved_errors
+
+    # What to drop
+    drop:
+      - stale_context (>30min unused)
+      - unrelated_files
+      - resolved_issues
+      - abandoned_approaches
+
+# ============================================================================
+# CONTEXT LOADING STRATEGIES
+# ============================================================================
+
+loading_strategies:
+  # Strategy: Narrow Focus (default)
+  narrow_focus:
+    description: "Load only what's immediately needed"
+    max_files_initial: 5
+    max_dependencies_depth: 1
+    load_tests: "on_demand"
+    load_docs: "on_demand"
+
+  # Strategy: Broad Exploration
+  broad_exploration:
+    description: "Wide exploration for investigation tasks"
+    max_files_initial: 20
+    max_dependencies_depth: 2
+    load_tests: "related_only"
+    load_docs: "architecture_only"
+
+  # Strategy: Feature Implementation
+  feature_implementation:
+    description: "Balanced loading for feature work"
+    max_files_initial: 10
+    max_dependencies_depth: 1
+    load_tests: "related_and_patterns"
+    load_docs: "related_only"
+
+  # Strategy: Bug Investigation
+  bug_investigation:
+    description: "Load error context and related files"
+    max_files_initial: 8
+    max_dependencies_depth: 2
+    load_tests: "failing_only"
+    load_docs: "error_related"
+
+  # Task type → strategy mapping
+  task_strategy_mapping:
+    typo_fix: "narrow_focus"
+    documentation: "narrow_focus"
+    bug_fix_simple: "narrow_focus"
+    bug_fix_complex: "bug_investigation"
+    feature_small: "narrow_focus"
+    feature_medium: "feature_implementation"
+    feature_large: "feature_implementation"
+    architecture_decision: "broad_exploration"
+    investigation: "broad_exploration"
+    debugging_session: "bug_investigation"
+
+# ============================================================================
+# MONITORING & ALERTS
+# ============================================================================
+
+monitoring:
+  enabled: true
+
+  metrics:
+    - name: "input_to_output_ratio"
+      target: "<8:1"
+      warning_threshold: "20:1"
+      critical_threshold: "36:1"
+
+    - name: "context_budget_usage"
+      target: "<70%"
+      warning_threshold: "80%"
+      critical_threshold: "95%"
+
+    - name: "stale_context_percentage"
+      target: "<20%"
+      warning_threshold: "40%"
+      critical_threshold: "60%"
+
+    - name: "session_duration"
+      target: "<90min"
+      warning_threshold: "120min"
+      critical_threshold: "180min"
+
+  alerts:
+    context_heavy_session:
+      condition: "input_to_output_ratio > 36:1"
+      action: "log_and_alert"
+      message: "Context-heavy session detected. Consider reset or narrower scope."
+
+    budget_approaching_limit:
+      condition: "context_budget_usage > 80%"
+      action: "warn"
+      message: "Context budget at {percentage}%. Approaching limit."
+
+    stale_context_detected:
+      condition: "stale_context_percentage > 40%"
+      action: "offer_cleanup"
+      message: "40% of context hasn't been used recently. Clean up?"
+
+# ============================================================================
+# REPOSITORY-SPECIFIC OVERRIDES
+# ============================================================================
+
+# Repositories can override budgets in .claude/config/context-budget.local.yaml
+# Example for legacy codebase with larger context needs:
+#
+# task_budgets:
+#   feature_medium:
+#     max_tokens: 200000  # Override to allow larger context
+
+allow_local_overrides: true
+local_override_file: ".claude/config/context-budget.local.yaml"
+
+# ============================================================================
+# END OF CONFIGURATION
+# ============================================================================

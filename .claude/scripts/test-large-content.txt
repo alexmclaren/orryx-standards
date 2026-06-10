@@ -1,0 +1,9 @@
+Track 3 Test: Large content for chunking validation. This memory contains significantly more content than the 500-token limit to test automatic chunking behavior. The system should split this into multiple chunks while preserving metadata across all chunks. Each chunk should have chunk_index, total_chunks, and chunk_of metadata fields. This is paragraph one with substantial text to ensure we exceed the token limit.
+
+Paragraph two continues with more detailed information about the chunking behavior. The pinecone-memory-write script implements intelligent chunking that splits content by paragraph boundaries, ensuring semantic coherence within each chunk. This prevents splitting mid-sentence or mid-thought.
+
+Paragraph three adds even more content to guarantee multiple chunks are created. The chunking algorithm uses a 500-token maximum with 50-token overlap to maintain context between chunks. This overlap ensures that queries can match content near chunk boundaries without missing relevant information.
+
+Paragraph four provides additional context about memory metadata preservation. All chunks share the same base metadata (type, repo, domain, tags, confidence, importance) while adding chunk-specific fields (chunk_index, total_chunks, chunk_of). This enables retrieval of individual chunks or reconstruction of the full memory.
+
+Paragraph five concludes this large memory test with final observations about the chunking system's design principles: semantic coherence, metadata consistency, overlap for context, and efficient retrieval. The system balances token limits with information density to optimize both storage and retrieval performance.

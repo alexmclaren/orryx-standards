@@ -1,0 +1,62 @@
+# [REQUIRES HUMAN REVIEW] Canonical Orryx Group pre-commit secret-scanner config
+#
+# Status: STAGED TEMPLATE — not enforced anywhere by being here.
+# Source: copied verbatim-with-generalization from orryx-brain/.pre-commit-config.yaml
+#         (the proven, in-use config; Session 118).
+# Purpose: give orryx-core / orryx-governance (and any repo lacking a scanner)
+#          a single canonical config to adopt, instead of each inventing one.
+#
+# Why human review before per-repo enforcement (orryx-brain CLAUDE.md §7):
+#   a pre-commit / gitleaks config IS a security-policy artefact. Enabling it
+#   per-repo changes the commit gate and bypass policy — operator decision.
+#
+# To adopt in a repo (operator/maintainer action):
+#   1. cp this file to <repo>/.pre-commit-config.yaml
+#   2. cp the companion gitleaks.template.toml to <repo>/.gitleaks.toml
+#   3. python -m pre_commit install
+#
+# Bypass policy: do NOT use --no-verify without security-team approval logged
+# per the repo's governance security doc.
+
+repos:
+  # ---- Generic file hygiene ----
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-json
+        exclude: |
+          (?x)^(
+            .*\.vscode/.*\.json|
+            .*tsconfig.*\.json|
+            .*\.eslintrc.*\.json
+          )$
+      - id: check-yaml
+        exclude: |
+          (?x)^(
+            lambda/.*template\.yaml|
+            .*sam-template\.yaml
+          )$
+      - id: end-of-file-fixer
+        exclude: |
+          (?x)^(
+            .*\.svg|
+            .*node_modules/.*|
+            .*package-lock\.json
+          )$
+      - id: trailing-whitespace
+        exclude: |
+          (?x)^(
+            .*\.md|
+            .*node_modules/.*
+          )$
+
+  # ---- Gitleaks: secret detection ----
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+        args: ['--config=.gitleaks.toml']

@@ -1,0 +1,386 @@
+# Memory Freshness & Retention Configuration
+# Version: 1.0.0
+# Last Updated: 2026-05-18
+#
+# Manages Pinecone memory lifecycle: expiration, archival, validation
+
+version: "1.0.0"
+
+# ============================================================================
+# FRESHNESS RULES BY MEMORY TYPE
+# ============================================================================
+
+freshness_rules:
+  # Session learnings
+  session_learnings:
+    expire_after_days: 365
+    validation_required: false
+    archive_namespace: "archives.sessions"
+    action_on_expire: "archive"
+    rationale: "Session learnings become stale after a year. Archive but keep searchable."
+
+  # Debugging solutions
+  debugging_solutions:
+    expire_after_days: 180
+    validation_required: true
+    action_on_expire: "mark_stale_require_validation"
+    rationale: "Code changes frequently. Debugging solutions need revalidation after 6 months."
+
+  # Architecture decisions (ADRs)
+  architecture_decisions:
+    expire_after_days: 730  # 2 years
+    superseded_only: true  # Only expire if superseded by new ADR
+    action_on_expire: "keep_unless_superseded"
+    rationale: "Architecture decisions remain relevant for years. Only expire if replaced."
+
+  # Implementation patterns
+  patterns:
+    expire_after_days: 365
+    re_embed_if_recurring: true  # Refresh if pattern used multiple times
+    action_on_expire: "archive"
+    rationale: "Patterns evolve. Archive after a year unless actively used."
+
+  # Code review findings
+  code_review_findings:
+    expire_after_days: 180
+    action_on_expire: "archive"
+    rationale: "Code review findings become outdated as code evolves."
+
+  # Incident postmortems
+  incidents_postmortems:
+    expire_after_days: never
+    archive_after_days: 730  # Archive but keep searchable
+    action_on_expire: "never"
+    rationale: "Incident learnings are critical. Never delete, archive after 2 years."
+
+  # Standards and conventions
+  standards:
+    expire_after_days: never
+    version_controlled: true  # Keep history of changes
+    action_on_expire: "never"
+    rationale: "Standards are foundational. Never expire, maintain version history."
+
+  # Product decisions
+  product_decisions:
+    expire_after_days: 730  # 2 years
+    superseded_only: true
+    action_on_expire: "archive_unless_superseded"
+    rationale: "Product decisions have long-term impact. Supersede rather than expire."
+
+  # Codeburn findings
+  codeburn_findings:
+    expire_after_days: 90
+    action_on_expire: "archive"
+    rationale: "Codeburn findings reflect current state. Archive after 90 days."
+
+  # Codex reviews
+  codex_reviews:
+    expire_after_days: 180
+    action_on_expire: "archive"
+    rationale: "Codex reviews become outdated as codebase evolves."
+
+# ============================================================================
+# EXPIRATION ACTIONS
+# ============================================================================
+
+expiration_actions:
+  # Action: Mark as stale (memory remains but flagged)
+  mark_stale:
+    enabled: true
+    metadata_update:
+      stale: true
+      stale_since: "{current_timestamp}"
+      requires_validation: true
+    reduce_retrieval_priority: true
+    priority_penalty: 0.3  # Reduce score by 30%
+
+  # Action: Archive (move to archive namespace)
+  archive:
+    enabled: true
+    archive_namespace_prefix: "archives."
+    keep_original: false  # Delete original after archive
+    metadata_update:
+      archived: true
+      archived_at: "{current_timestamp}"
+      original_namespace: "{original_namespace}"
+
+  # Action: Delete (permanent removal)
+  delete:
+    enabled: true
+    require_confirmation: true
+    log_deletion: true
+    metadata_backup: true  # Backup metadata before deletion
+
+  # Action: Supersede (replace with newer version)
+  supersede:
+    enabled: true
+    metadata_update:
+      superseded: true
+      superseded_by: "{new_memory_id}"
+      superseded_at: "{current_timestamp}"
+    keep_for_audit: true
+
+# ============================================================================
+# VALIDATION WORKFLOW
+# ============================================================================
+
+validation:
+  enabled: true
+
+  # Trigger validation for stale memories
+  validation_triggers:
+    - condition: "age > expire_after_days * 0.8"
+      action: "flag_for_validation"
+      message: "Memory approaching expiration. Validation recommended."
+
+    - condition: "usage_count < 3 AND age > 90 days"
+      action: "flag_for_deletion"
+      message: "Rarely used memory approaching 90 days. Consider deletion."
+
+    - condition: "effectiveness_score < 0.3"
+      action: "flag_for_revision"
+      message: "Low effectiveness score. Revision needed."
+
+  # Validation process
+  validation_process:
+    - step: "check_if_still_relevant"
+      question: "Is this memory still relevant to current codebase?"
+
+    - step: "verify_accuracy"
+      question: "Is the information still accurate?"
+
+    - step: "check_if_superseded"
+      question: "Has this been superseded by a newer approach?"
+
+    - step: "decide_action"
+      options:
+        - "refresh_and_keep"
+        - "update_and_keep"
+        - "supersede_with_new"
+        - "archive"
+        - "delete"
+
+# ============================================================================
+# USAGE-BASED RETENTION
+# ============================================================================
+
+usage_based_retention:
+  enabled: true
+
+  # Frequently used memories get extended lifetime
+  high_usage_extension:
+    enabled: true
+    usage_threshold: 10  # Used 10+ times
+    extension_days: 180
+    max_extensions: 2
+
+  # Rarely used memories expire sooner
+  low_usage_expedited_expiry:
+    enabled: true
+    usage_threshold: 2  # Used <2 times
+    reduction_days: 90
+
+  # Effective memories get higher priority
+  effectiveness_based_retention:
+    enabled: true
+    high_effectiveness_threshold: 0.8
+    high_effectiveness_extension_days: 180
+    low_effectiveness_threshold: 0.3
+    low_effectiveness_reduction_days: 60
+
+# ============================================================================
+# AUTOMATIC FRESHNESS SCANS
+# ============================================================================
+
+automatic_scans:
+  enabled: true
+
+  # Daily scan: Check for expired memories
+  daily_scan:
+    enabled: true
+    time: "02:00 UTC"
+    actions:
+      - "mark_expired_as_stale"
+      - "log_expiration_report"
+
+  # Weekly scan: Archive stale memories
+  weekly_scan:
+    enabled: true
+    day: "Sunday"
+    time: "03:00 UTC"
+    actions:
+      - "archive_stale_memories"
+      - "generate_freshness_report"
+
+  # Monthly scan: Deep validation
+  monthly_scan:
+    enabled: true
+    day: 1  # First day of month
+    time: "04:00 UTC"
+    actions:
+      - "validate_high_value_memories"
+      - "identify_unused_memories"
+      - "suggest_deletions"
+      - "generate_health_report"
+
+# ============================================================================
+# MEMORY CORRECTION PROTOCOL
+# ============================================================================
+
+correction_protocol:
+  enabled: true
+
+  # How to correct incorrect memories
+  correction_process:
+    - step: "create_corrected_version"
+      action: "write_new_memory_with_supersedes_field"
+
+    - step: "update_original"
+      action: "mark_original_as_superseded"
+      metadata_update:
+        superseded_by: "{new_memory_id}"
+        superseded_at: "{current_timestamp}"
+        correction_reason: "{reason}"
+
+    - step: "decide_original_fate"
+      options:
+        - option: "keep_for_audit"
+          when: "important_historical_record"
+        - option: "archive"
+          when: "minor_correction"
+        - option: "delete"
+          when: "completely_incorrect"
+
+  # Auto-correction triggers
+  auto_correction_triggers:
+    # Pattern: Memory says "use approach X" but approach X failed
+    ineffective_memory:
+      trigger: "memory_retrieved_but_didnt_help"
+      action: "reduce_effectiveness_score"
+      threshold: "If effectiveness_score < 0.3, mark for review"
+
+    # Pattern: ADR superseded by new decision
+    superseded_adr:
+      trigger: "new_adr_created_in_same_domain"
+      action: "mark_previous_adr_as_superseded"
+      preserve: true  # Keep for history
+
+    # Pattern: Debugging solution no longer works
+    outdated_solution:
+      trigger: "solution_applied_but_test_still_fails"
+      action: "mark_as_outdated"
+      require_human_review: true
+
+    # Pattern: Memory is >12 months old and unused
+    stale_memory:
+      trigger: "memory_age > 365 days AND usage_count < 5"
+      action: "mark_for_archival"
+      notify: "governance_team"
+
+# ============================================================================
+# NAMESPACE-SPECIFIC RETENTION
+# ============================================================================
+
+namespace_retention:
+  # Critical namespaces (never auto-delete)
+  critical:
+    - "incidents.postmortems"
+    - "standards.global"
+    - "governance.policies"
+    - "security.findings"
+    - "compliance.*"
+    auto_delete: false
+    requires_human_approval: true
+
+  # High-value namespaces (extended retention)
+  high_value:
+    - "*.architecture"
+    - "*.debugging"
+    - "architecture.cross-repo"
+    retention_multiplier: 1.5
+
+  # Low-value namespaces (reduced retention)
+  low_value:
+    - "*.sessions"
+    - "codeburn.findings"
+    retention_multiplier: 0.75
+
+  # Test/experimental namespaces (short retention)
+  experimental:
+    - "test.*"
+    - "experimental.*"
+    - "sandbox.*"
+    retention_days: 30
+    auto_delete: true
+
+# ============================================================================
+# REPORTING & METRICS
+# ============================================================================
+
+reporting:
+  enabled: true
+
+  # Freshness dashboard
+  dashboard:
+    enabled: true
+    output_file: "docs/governance/MEMORY_FRESHNESS_DASHBOARD.md"
+    update_frequency: "weekly"
+
+    sections:
+      - name: "Expiration Summary"
+        metrics:
+          - memories_expired_this_week
+          - memories_approaching_expiration
+          - memories_requiring_validation
+
+      - name: "Usage Statistics"
+        metrics:
+          - most_used_memories
+          - least_used_memories
+          - average_usage_count_by_type
+
+      - name: "Effectiveness"
+        metrics:
+          - highest_effectiveness_memories
+          - lowest_effectiveness_memories
+          - average_effectiveness_by_type
+
+      - name: "Health Score"
+        metrics:
+          - percentage_validated
+          - percentage_stale
+          - percentage_fresh
+
+  # Alerts
+  alerts:
+    critical_memory_expiring:
+      condition: "importance == 'critical' AND days_until_expiry < 30"
+      action: "alert_governance_team"
+      message: "Critical memory expiring in {days_until_expiry} days: {memory_id}"
+
+    high_stale_percentage:
+      condition: "stale_percentage > 20%"
+      action: "alert_governance_team"
+      message: "20% of memories are stale. Validation backlog growing."
+
+    unused_memory_buildup:
+      condition: "usage_count == 0 AND age > 90 days"
+      action: "log_for_review"
+      message: "Unused memory older than 90 days. Consider deletion."
+
+# ============================================================================
+# REPOSITORY-SPECIFIC OVERRIDES
+# ============================================================================
+
+# Example override for fast-moving experimental repo:
+#
+# freshness_rules:
+#   debugging_solutions:
+#     expire_after_days: 90  # Faster expiration
+
+allow_local_overrides: true
+local_override_file: ".claude/config/memory-freshness.local.yaml"
+
+# ============================================================================
+# END OF CONFIGURATION
+# ============================================================================

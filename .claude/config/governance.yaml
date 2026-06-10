@@ -1,0 +1,405 @@
+# Claude Code Governance Configuration
+# Version: 1.0.0
+# Last Updated: 2026-05-18
+#
+# This is the MASTER governance configuration for the Orryx ecosystem.
+# It coordinates all governance systems:
+#   - Context management
+#   - Read-before-edit enforcement
+#   - Execution budgets and retry limits
+#   - Memory freshness
+#   - Quality gates
+
+version: "1.0.0"
+
+# ============================================================================
+# GOVERNANCE PHILOSOPHY
+# ============================================================================
+#
+# Goals:
+#   1. Prevent wasteful token usage
+#   2. Enforce best practices proactively
+#   3. Catch issues early (pre-commit, pre-edit, pre-planning)
+#   4. Learn from past mistakes via Pinecone memory
+#   5. Fail fast when stuck, escalate intelligently
+#
+# Principles:
+#   - Soft gates for guidance (warnings)
+#   - Hard gates for critical issues (blocks)
+#   - Progressive enforcement (warn → soft block → hard block)
+#   - Escape hatches for legitimate overrides (with logging)
+
+# ============================================================================
+# GOVERNANCE SYSTEMS
+# ============================================================================
+
+systems:
+  context_management:
+    enabled: true
+    config_file: ".claude/config/context-budget.yaml"
+    enforcement_level: "hard"  # hard | soft | warn
+    description: "Enforces token budgets and prevents context bloat"
+
+  read_before_edit:
+    enabled: true
+    config_file: ".claude/config/read-before-edit.yaml"
+    enforcement_level: "hard"
+    description: "Mandates exploration before file modifications"
+
+  execution_budgets:
+    enabled: true
+    config_file: ".claude/config/execution-budgets.yaml"
+    enforcement_level: "hard"
+    description: "Limits retry attempts and prevents infinite loops"
+
+  memory_integration:
+    enabled: true
+    config_file: ".claude/config/memory-freshness.yaml"
+    enforcement_level: "soft"
+    description: "Pinecone memory retrieval and freshness management"
+
+  quality_gates:
+    enabled: true
+    enforcement_level: "hard"
+    description: "Pre-commit quality checks (lint, types, tests, security)"
+
+  codeburn_monitoring:
+    enabled: true
+    config_file: ".claude/config/codeburn.yaml"
+    enforcement_level: "warn"
+    description: "Real-time session monitoring and alerts"
+
+# ============================================================================
+# ENFORCEMENT LEVELS
+# ============================================================================
+
+enforcement_levels:
+  hard:
+    description: "Blocks execution until resolved"
+    can_override: false
+    logs: true
+    alerts: true
+
+  soft:
+    description: "Blocks but allows override with justification"
+    can_override: true
+    requires_justification: true
+    logs: true
+    alerts: true
+
+  warn:
+    description: "Warns but allows continuation"
+    can_override: true
+    requires_justification: false
+    logs: true
+    alerts: false
+
+# ============================================================================
+# HOOK ORCHESTRATION
+# ============================================================================
+#
+# Defines when hooks are triggered and in what order
+
+hooks:
+  # Before Planning
+  pre_planning:
+    - name: "memory-retrieval"
+      script: ".claude/hooks/pre-planning-memory-retrieval.ts"
+      enabled: true
+      blocking: false
+      timeout_seconds: 30
+
+    - name: "context-budget-check"
+      script: ".claude/hooks/context-budget-check.ts"
+      enabled: true
+      blocking: true
+      timeout_seconds: 5
+
+  # Before Edit
+  pre_edit:
+    - name: "memory-retrieval"
+      script: ".claude/hooks/pre-edit-memory-retrieval.ts"
+      enabled: true
+      blocking: false
+      timeout_seconds: 20
+
+    - name: "read-before-edit-gate"
+      script: ".claude/hooks/read-before-edit-gate.ts"
+      enabled: true
+      blocking: true
+      timeout_seconds: 5
+
+    - name: "dependency-check"
+      script: ".claude/hooks/dependency-check.ts"
+      enabled: true
+      blocking: false
+      timeout_seconds: 10
+
+  # Before Debugging
+  pre_debugging:
+    - name: "memory-retrieval"
+      script: ".claude/hooks/pre-debugging-memory-retrieval.ts"
+      enabled: true
+      blocking: false
+      timeout_seconds: 30
+
+    - name: "execution-budget-check"
+      script: ".claude/hooks/execution-budget-check.ts"
+      enabled: true
+      blocking: true
+      timeout_seconds: 5
+
+  # After Story
+  post_story:
+    - name: "memory-write"
+      script: ".claude/hooks/post-story-memory-write.ts"
+      enabled: true
+      blocking: false
+      timeout_seconds: 60
+
+    - name: "session-metrics-log"
+      script: ".claude/hooks/session-metrics-log.ts"
+      enabled: true
+      blocking: false
+      timeout_seconds: 10
+
+  # Pre-Commit
+  pre_commit:
+    - name: "lint-check"
+      script: ".claude/hooks/pre-commit-lint.ts"
+      enabled: true
+      blocking: true
+      timeout_seconds: 60
+
+    - name: "type-check"
+      script: ".claude/hooks/pre-commit-types.ts"
+      enabled: true
+      blocking: true
+      timeout_seconds: 60
+
+    - name: "test-check"
+      script: ".claude/hooks/pre-commit-tests.ts"
+      enabled: true
+      blocking: true
+      timeout_seconds: 300
+
+    - name: "security-scan"
+      script: ".claude/hooks/pre-commit-security.ts"
+      enabled: true
+      blocking: true
+      timeout_seconds: 60
+
+# ============================================================================
+# ESCALATION RULES
+# ============================================================================
+
+escalation:
+  # When to escalate to human
+  triggers:
+    - condition: "retry_count > max_retries"
+      action: "block_and_escalate"
+      message: "Maximum retry attempts exceeded. Human intervention required."
+
+    - condition: "confidence_score < 0.3"
+      action: "warn_and_escalate"
+      message: "Low confidence in solution. Human review recommended."
+
+    - condition: "cost_budget_exceeded"
+      action: "block_and_escalate"
+      message: "Cost budget exceeded for this task."
+
+    - condition: "loop_detected"
+      action: "block_and_escalate"
+      message: "Infinite loop detected. Same error recurring."
+
+    - condition: "critical_domain_change"
+      action: "require_human_review"
+      message: "Changes to critical domain require human approval."
+
+  # Critical domains requiring human review
+  critical_domains:
+    - authentication
+    - authorization
+    - payment
+    - data-migration
+    - patient-data
+    - clinical-logic
+    - compliance
+    - privacy
+    - security
+
+# ============================================================================
+# LOGGING & MONITORING
+# ============================================================================
+
+logging:
+  enabled: true
+  log_dir: ".claude/logs"
+
+  levels:
+    governance: "info"      # Governance decisions
+    hooks: "info"           # Hook execution
+    memory: "debug"         # Memory operations
+    metrics: "info"         # Session metrics
+    errors: "error"         # Errors and failures
+
+  outputs:
+    - type: "file"
+      path: ".claude/logs/governance.log"
+      rotation: "daily"
+      retention_days: 30
+
+    - type: "jsonl"
+      path: ".claude/logs/governance.jsonl"
+      rotation: "daily"
+      retention_days: 90
+
+monitoring:
+  enabled: true
+
+  metrics:
+    - name: "context_budget_usage"
+      threshold: 0.8
+      alert_on_exceed: true
+
+    - name: "retry_count"
+      threshold: 5
+      alert_on_exceed: true
+
+    - name: "read_to_edit_ratio"
+      threshold: 2.0
+      alert_on_below: true
+
+    - name: "session_cost"
+      threshold: 25.0
+      alert_on_exceed: true
+
+  alerts:
+    - type: "log"
+      enabled: true
+
+    - type: "dashboard"
+      enabled: true
+      dashboard_file: "docs/governance/DASHBOARD.md"
+
+# ============================================================================
+# OVERRIDE MANAGEMENT
+# ============================================================================
+
+overrides:
+  enabled: true
+  requires_justification: true
+  log_all_overrides: true
+
+  # Who can override what
+  permissions:
+    human:
+      can_override:
+        - soft_gates
+        - warn_gates
+      cannot_override:
+        - hard_gates_security
+        - hard_gates_compliance
+
+    agent:
+      can_override:
+        - warn_gates
+      cannot_override:
+        - soft_gates
+        - hard_gates
+
+# ============================================================================
+# GOVERNANCE DASHBOARD
+# ============================================================================
+
+dashboard:
+  enabled: true
+  auto_update: true
+  update_frequency: "daily"
+  output_file: "docs/governance/DASHBOARD.md"
+
+  sections:
+    - name: "Health Score"
+      metrics:
+        - context_budget_health
+        - read_to_edit_ratio
+        - retry_count_avg
+        - quality_gates_pass_rate
+
+    - name: "Violations"
+      shows:
+        - top_10_violations_by_type
+        - recent_escalations
+        - override_usage
+
+    - name: "Trends"
+      shows:
+        - 7_day_trend
+        - 30_day_trend
+        - month_over_month_comparison
+
+# ============================================================================
+# REPOSITORY-SPECIFIC OVERRIDES
+# ============================================================================
+#
+# Repos can override governance settings by creating:
+#   {repo}/.claude/config/governance.local.yaml
+#
+# Example:
+#   systems:
+#     execution_budgets:
+#       enforcement_level: "soft"  # Override to soft for this repo
+
+include_local_overrides: true
+local_override_file: ".claude/config/governance.local.yaml"
+
+# ============================================================================
+# FEATURE FLAGS
+# ============================================================================
+
+feature_flags:
+  # Gradual rollout of new governance features
+  strict_context_enforcement:
+    enabled: true
+    rollout_percentage: 100
+
+  anti_loop_detection:
+    enabled: true
+    rollout_percentage: 100
+
+  auto_compaction:
+    enabled: true
+    rollout_percentage: 100
+
+  pinecone_auto_retrieval:
+    enabled: true
+    rollout_percentage: 100
+
+# ============================================================================
+# HEALTH CHECKS
+# ============================================================================
+
+health_checks:
+  enabled: true
+  frequency: "hourly"
+
+  checks:
+    - name: "pinecone_connection"
+      critical: false
+      alert_on_failure: true
+
+    - name: "config_files_valid"
+      critical: true
+      alert_on_failure: true
+
+    - name: "hook_scripts_exist"
+      critical: true
+      alert_on_failure: true
+
+    - name: "log_directory_writable"
+      critical: false
+      alert_on_failure: true
+
+# ============================================================================
+# END OF CONFIGURATION
+# ============================================================================

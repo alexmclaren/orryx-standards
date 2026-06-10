@@ -1,0 +1,37 @@
+{
+  "name": "orryx-memory-hooks",
+  "version": "1.0.0",
+  "description": "Pinecone memory integration hooks for Claude Code",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "tsx test-hooks.ts",
+    "test:planning": "tsx pre-planning-memory-retrieval.ts",
+    "test:edit": "tsx pre-edit-memory-retrieval.ts",
+    "test:debug": "tsx pre-debugging-memory-retrieval.ts",
+    "test:write": "tsx post-story-memory-write.ts",
+    "seed:verify": "tsx ../scripts/pinecone-verify.ts",
+    "seed:verify:count": "tsx ../scripts/pinecone-verify.ts --count-by-namespace",
+    "seed:adrs": "tsx ../scripts/seed-historical-adrs.ts",
+    "seed:debug:orryx": "tsx ../scripts/seed-git-debugging.ts --repo=orryx-brain --max-commits=200",
+    "seed:debug:pillarworks": "tsx ../scripts/seed-git-debugging.ts --repo=pillarworks --max-commits=200",
+    "seed:patterns": "tsx ../scripts/seed-patterns.ts",
+    "seed:codeburn": "tsx ../scripts/seed-codeburn-findings.ts",
+    "seed:standards": "tsx ../scripts/seed-standards.ts",
+    "seed:all": "npm run seed:adrs && npm run seed:debug:orryx && npm run seed:debug:pillarworks && npm run seed:patterns && npm run seed:codeburn && npm run seed:standards"
+  },
+  "dependencies": {
+    "@pinecone-database/pinecone": "^3.0.3",
+    "openai": "^4.73.0",
+    "uuid": "^11.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/uuid": "^10.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

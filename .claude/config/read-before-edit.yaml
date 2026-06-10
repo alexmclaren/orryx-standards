@@ -1,0 +1,392 @@
+# Read-Before-Edit Governance Configuration
+# Version: 1.0.0
+# Last Updated: 2026-05-18
+#
+# Enforces thorough exploration before file modifications
+# Addresses Codeburn finding: Read:edit ratio 2.1:1 (should be 4+:1)
+
+version: "1.0.0"
+
+# ============================================================================
+# MANDATORY EXPLORATION PHASE
+# ============================================================================
+#
+# Before editing ANY file, agent MUST complete exploration checklist
+
+exploration_requirements:
+  enabled: true
+  enforcement_level: "hard"  # hard | soft | warn
+
+  # Minimum reads required before first edit
+  minimum_reads_before_edit:
+    default: 4
+    by_task_type:
+      typo_fix: 1
+      documentation: 2
+      bug_fix_simple: 3
+      bug_fix_complex: 6
+      refactor_small: 4
+      feature_small: 5
+      feature_medium: 8
+      feature_large: 12
+      architecture_decision: 10
+      investigation: 15
+
+  # Mandatory exploration checklist
+  checklist:
+    - item: "read_target_file"
+      description: "Read the file you intend to edit"
+      required: true
+      blocking: true
+
+    - item: "read_test_file"
+      description: "Read associated test file"
+      required: true
+      blocking: true
+      exceptions:
+        - "no_test_file_exists"
+        - "test_file_to_be_created"
+
+    - item: "identify_dependencies"
+      description: "Identify what imports this file and what it imports"
+      required: true
+      blocking: true
+
+    - item: "read_immediate_dependencies"
+      description: "Read immediate dependencies (1 level deep)"
+      required: true
+      blocking: false  # Soft requirement
+      min_count: 2
+
+    - item: "trace_execution_path"
+      description: "Understand how this code is called"
+      required: false
+      blocking: false
+
+    - item: "check_similar_patterns"
+      description: "Search for similar code patterns in codebase"
+      required: false
+      blocking: false
+
+    - item: "review_recent_changes"
+      description: "Check git history for recent changes to this file"
+      required: false
+      blocking: false
+
+  # Exploration depth by file type
+  depth_by_filetype:
+    ".py":
+      min_reads: 4
+      check_imports: true
+      check_importers: true
+      check_tests: true
+
+    ".ts":
+      min_reads: 4
+      check_imports: true
+      check_importers: true
+      check_tests: true
+
+    ".js":
+      min_reads: 3
+      check_imports: true
+      check_importers: false
+      check_tests: true
+
+    ".rb":
+      min_reads: 4
+      check_imports: true
+      check_importers: true
+      check_tests: true
+
+    ".md":
+      min_reads: 1
+      check_imports: false
+      check_importers: false
+      check_tests: false
+
+    ".yaml":
+      min_reads: 2
+      check_imports: false
+      check_importers: true  # Who uses this config?
+      check_tests: false
+
+# ============================================================================
+# DEPENDENCY TRACING RULES
+# ============================================================================
+#
+# Automatic discovery of what files to read based on dependencies
+
+dependency_tracing:
+  enabled: true
+
+  # Depth: How many levels to trace
+  default_depth: 1
+  max_depth: 3
+
+  depth_by_task:
+    bug_fix_complex: 2
+    architecture_decision: 2
+    investigation: 3
+    default: 1
+
+  # What to trace
+  trace_rules:
+    imports:
+      enabled: true
+      description: "What does this file import?"
+      languages:
+        python:
+          patterns:
+            - "^import\\s+([\\w.]+)"
+            - "^from\\s+([\\w.]+)\\s+import"
+        typescript:
+          patterns:
+            - "^import\\s+.*\\s+from\\s+['\"]([^'\"]+)['\"]"
+            - "^import\\s+['\"]([^'\"]+)['\"]"
+        javascript:
+          patterns:
+            - "const\\s+.*\\s+=\\s+require\\(['\"]([^'\"]+)['\"]\\)"
+            - "^import\\s+.*\\s+from\\s+['\"]([^'\"]+)['\"]"
+
+    importers:
+      enabled: true
+      description: "What imports this file?"
+      method: "grep_search"
+      search_pattern: "import.*{filename}"
+
+    callers:
+      enabled: true
+      description: "What calls functions in this file?"
+      method: "grep_search"
+      search_pattern: "{function_name}\\("
+
+    test_files:
+      enabled: true
+      description: "Find test files for this module"
+      patterns:
+        - "{filename}.test.{ext}"
+        - "{filename}.spec.{ext}"
+        - "test_{filename}.{ext}"
+        - "{filename}_test.{ext}"
+      search_dirs:
+        - "tests/"
+        - "test/"
+        - "specs/"
+        - "spec/"
+        - "__tests__/"
+
+# ============================================================================
+# PRE-EDIT VALIDATION CHECKPOINTS
+# ============================================================================
+#
+# Validation before allowing edit
+
+pre_edit_validation:
+  enabled: true
+
+  # Checkpoint 1: Understanding check
+  understanding_check:
+    enabled: true
+    questions:
+      - "What does this file do?"
+      - "What will break if you change it incorrectly?"
+      - "What tests cover this file?"
+    confidence_threshold: 0.7
+    action_if_below: "warn_and_require_justification"
+
+  # Checkpoint 2: Impact analysis
+  impact_analysis:
+    enabled: true
+    required_analysis:
+      - direct_impact: "Files that import this"
+      - test_impact: "Tests that will be affected"
+      - breaking_change_risk: "API/interface changes?"
+    action: "log_analysis"
+
+  # Checkpoint 3: Alternative approaches
+  alternative_approaches:
+    enabled: false  # Optional, not blocking
+    questions:
+      - "Could this be solved without editing this file?"
+      - "Is there a safer approach?"
+    action: "log_consideration"
+
+  # Checkpoint 4: Test coverage check
+  test_coverage_check:
+    enabled: true
+    require_tests_exist: true
+    action_if_no_tests: "warn"
+    message: "No tests found for this file. Proceed with caution."
+
+  # Checkpoint 5: Confidence check
+  confidence_check:
+    enabled: true
+    min_confidence: 0.8
+    scale: 1-10
+    questions:
+      - "How confident are you in this change? (1-10)"
+      - "Have you read enough context?"
+      - "Do you understand the implications?"
+    action_if_low: "read_more_files"
+
+# ============================================================================
+# ENFORCEMENT LAYERS
+# ============================================================================
+#
+# Multi-layer enforcement for defense in depth
+
+enforcement_layers:
+  # Layer 1: Pre-commit hook (hard gate)
+  pre_commit_hook:
+    enabled: true
+    script: ".claude/hooks/read-before-edit-gate.ts"
+    action: "block_commit_if_violated"
+    description: "Hard gate: Block commits that violate read-before-edit"
+
+  # Layer 2: Compound-engineering skill (proactive)
+  skill_integration:
+    enabled: true
+    skill: "thorough-investigation"
+    trigger: "before_edit_tool_use"
+    description: "Intercept Edit tool and enforce exploration first"
+
+  # Layer 3: CLAUDE.md standard (guidance)
+  claude_md_standard:
+    enabled: true
+    section: "§11: Read-Before-Edit Governance"
+    description: "Documented in CLAUDE.base.md as required protocol"
+
+  # Layer 4: Agent config (autonomy constraint)
+  agent_constraint:
+    enabled: true
+    constraint: "pre_edit_exploration_required"
+    description: "Agent configs enforce read-before-edit at autonomy level"
+
+# ============================================================================
+# EXCEPTIONS & OVERRIDES
+# ============================================================================
+
+exceptions:
+  # Files that don't need extensive exploration
+  simple_files:
+    patterns:
+      - "*.md"  # Documentation (unless architectural)
+      - "*.txt"
+      - "*.json" (unless: "package.json", "tsconfig.json")
+      - "*.yaml" (unless: "config/**/*.yaml")
+      - "CHANGELOG.md"
+      - "README.md"
+    reduced_requirements:
+      minimum_reads_before_edit: 1
+      skip_dependency_tracing: true
+
+  # Auto-generated files
+  auto_generated:
+    patterns:
+      - "**/migrations/*.py"
+      - "**/migrations/*.sql"
+      - "**/*.lock"
+      - "**/dist/**/*"
+      - "**/build/**/*"
+    action: "skip_validation"
+
+  # Emergency hotfix override
+  emergency_hotfix:
+    enabled: true
+    requires_justification: true
+    requires_human_approval: true
+    log_override: true
+    message: "Emergency hotfix: Skipping read-before-edit validation. Justification: {reason}"
+
+# ============================================================================
+# REPORTING & METRICS
+# ============================================================================
+
+reporting:
+  enabled: true
+
+  # Track read:edit ratio
+  read_edit_ratio:
+    target: 4.0
+    warning_threshold: 3.0
+    critical_threshold: 2.0
+    report_frequency: "per_session"
+
+  # Track violations
+  violations:
+    track: true
+    categories:
+      - insufficient_reads
+      - no_dependency_check
+      - no_test_file_read
+      - low_confidence_override
+    action: "log_to_governance_dashboard"
+
+  # Success metrics
+  success_metrics:
+    - name: "first_attempt_success_rate"
+      target: ">80%"
+      description: "Edits that work on first try"
+
+    - name: "sessions_with_high_retry"
+      target: "<5/month"
+      description: "Sessions requiring >10 retries on same file"
+
+    - name: "premature_edit_blocks"
+      target: "~20/month"
+      description: "Intentional blocks of premature edits (good!)"
+
+# ============================================================================
+# MONITORING & ALERTS
+# ============================================================================
+
+monitoring:
+  enabled: true
+
+  metrics:
+    - name: "read_to_edit_ratio"
+      target: ">4:1"
+      warning_threshold: "<3:1"
+      critical_threshold: "<2:1"
+
+    - name: "exploration_checklist_completion"
+      target: ">90%"
+      warning_threshold: "<70%"
+
+    - name: "premature_edit_attempts"
+      target: "decreasing"
+      description: "Blocked edit attempts should decrease over time"
+
+  alerts:
+    low_read_ratio:
+      condition: "read_to_edit_ratio < 3.0"
+      action: "warn"
+      message: "Read:edit ratio below target. Read more before editing."
+
+    checklist_incomplete:
+      condition: "exploration_checklist_completion < 70%"
+      action: "block"
+      message: "Exploration checklist incomplete. Complete before editing."
+
+    repeated_premature_edits:
+      condition: "premature_edit_attempts > 5 in session"
+      action: "escalate"
+      message: "Repeated premature edit attempts. Review approach."
+
+# ============================================================================
+# REPOSITORY-SPECIFIC OVERRIDES
+# ============================================================================
+
+# Example override for documentation-heavy repo:
+#
+# exploration_requirements:
+#   minimum_reads_before_edit:
+#     default: 2  # Relaxed for docs repo
+
+allow_local_overrides: true
+local_override_file: ".claude/config/read-before-edit.local.yaml"
+
+# ============================================================================
+# END OF CONFIGURATION
+# ============================================================================
