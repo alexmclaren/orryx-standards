@@ -1,0 +1,36 @@
+# Outputs for S3 + CloudFront module
+
+output "bucket_name" {
+  description = "Name of the S3 bucket"
+  value       = aws_s3_bucket.frontend.id
+}
+
+output "bucket_arn" {
+  description = "ARN of the S3 bucket"
+  value       = aws_s3_bucket.frontend.arn
+}
+
+output "cloudfront_distribution_id" {
+  description = "ID of the CloudFront distribution (used for cache invalidations)"
+  value       = aws_cloudfront_distribution.frontend.id
+}
+
+output "cloudfront_distribution_arn" {
+  description = "ARN of the CloudFront distribution"
+  value       = aws_cloudfront_distribution.frontend.arn
+}
+
+output "cloudfront_domain_name" {
+  description = "Default CloudFront domain name (*.cloudfront.net)"
+  value       = aws_cloudfront_distribution.frontend.domain_name
+}
+
+output "cloudfront_hosted_zone_id" {
+  description = "Hosted zone ID for the CloudFront distribution (used for Route 53 alias records)"
+  value       = aws_cloudfront_distribution.frontend.hosted_zone_id
+}
+
+output "certificate_arn" {
+  description = "ARN of the ACM certificate (null if no custom domain)"
+  value       = var.domain_name != "" ? aws_acm_certificate.frontend[0].arn : null
+}
