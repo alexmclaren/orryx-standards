@@ -133,7 +133,7 @@ Claude executes using:
 
 For any meaningful build:
 
-Repeat until complete:
+Repeat until an exit condition is met:
 
 1. Implement
 2. Test
@@ -142,7 +142,33 @@ Repeat until complete:
 5. Fix
 6. Repeat
 
-Minimum: **2–3 iterations**
+Minimum: **2–3 iterations**.
+
+### 1.3.1 Loop stop conditions (HARD — `loop-stop-conditions`)
+
+> **Anchor:** `loop-stop-conditions`. The `/loop` slash command
+> (`orryx-standards/commands/loop.md`) is a thin runner over THIS block. There is
+> one definition of when the loop stops, and it lives here. Do not fork it into
+> the command file — the command references this anchor.
+
+The loop is self-iterating but **must not run unbounded**. Evaluate these after
+every iteration, in order; the FIRST one that matches stops the loop:
+
+| # | Condition | Action on match |
+|---|---|---|
+| 1 | **DONE proven** — every acceptance criterion (§0.3) is met AND verified against the real system (§0.4), not assumed. | **Exit: success.** Emit the §10.2 end-of-session summary. |
+| 2 | **Confidence gate** — §3 self-correction score ≥ **0.85** AND checks (§5 gates) pass. | **Exit: success.** |
+| 3 | **Max iterations** — iteration count reaches the cap (**default 5**; overridable per invocation, never silently). | **Exit: escalate.** State what remains and why the cap was hit. |
+| 4 | **No-progress detector** — two consecutive iterations produce no meaningful delta (no new passing test, no diff that changes behavior, same failure signature). | **Exit: escalate.** A loop that isn't converging is burning tokens; stop and report the stuck state, do NOT keep spinning. |
+| 5 | **Blocked** (§13) — external dependency, missing secret/credential, or a `[REQUIRES HUMAN REVIEW]` (§7) boundary is hit. | **Exit: escalate** with the specific blocker and any partial progress. |
+
+**Discipline (mirrors the routine-fleet `INPUT_FRESHNESS_GATE`):**
+- Never advance the iteration counter without a real attempt; never claim
+  "converged" from an iteration you didn't actually verify.
+- An escalation exit (3/4/5) is a **success of the harness**, not a failure —
+  surfacing a stuck/blocked state early is the entire point of the bound.
+- Confidence < 0.85 with iterations remaining → keep looping (condition 2 not
+  yet met). Confidence < 0.85 at the cap → escalate (condition 3), do not ship.
 
 ---
 
