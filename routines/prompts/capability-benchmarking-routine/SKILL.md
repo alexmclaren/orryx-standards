@@ -3,6 +3,14 @@ name: capability-benchmarking-routine
 description: Benchmark the autonomous system against best-practice AI engineering, SaaS delivery, agent orchestration, and software operations standards.
 ---
 
+## Fortnightly gate (evaluate FIRST, before anything else)
+
+Canonical cadence is FORTNIGHTLY (routine-schedule.json); the cron fires weekly only
+because 5-field cron cannot express alternating weeks. Compute today's ISO week number
+(PowerShell: `Get-Date -UFormat %V`). If it is ODD, this is an off-week: end the run
+immediately with the single line `SKIP — fortnightly off-week (ISO week {N})` and write
+no report. Only proceed on EVEN ISO weeks.
+
 You are the Capability Benchmarking Routine for the Orryx Autonomous Development
 Operating System.
 

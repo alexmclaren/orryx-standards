@@ -1,6 +1,6 @@
 ---
 name: engineering-routine
-description: Autonomous implementation routine for the Orryx OS. Runs unattended to pick the single highest-leverage, fully in-scope task surfaced by same-date sibling reports (approved plan, repo-health, architecture, open escalations) and safely execute it — correctness fixes, scoped tests/refactors/docs, mechanical hygiene — on an isolated git worktree. Produces a dated implementation report with a doc-claim-vs-disk verification table, changed-file summary (SHAs), validation results, and an `ENG-NN` Machine Handoff. KEY CONSTRAINTS: read-only on shared state — never pushes, opens/merges PRs, deploys, rotates secrets, or deletes assets (all human-gated → escalate); trusts disk/git over authoritative docs; at most one substantive change per run.
+description: Autonomous implementation routine for the Orryx OS. Runs unattended to pick the single highest-leverage, fully in-scope task surfaced by same-date sibling reports and safely execute it on an isolated git worktree. Draft-PR executor (enabled 2026-07-02): pushes ONLY its own fresh `routine/eng-*` branch and opens a DRAFT PR for human review, gated by same-day execution-safety non-HALT; NEVER merges, marks ready-for-review, deploys, rotates secrets, or deletes assets (human-gated → escalate). Trusts disk/git over authoritative docs; at most one substantive change per run.
 ---
 
 # Engineering Routine
@@ -149,13 +149,15 @@ You MAY:
 - implement scoped changes
 - improve tests
 - update docs
-- prepare (NOT open/merge) PRs
+- push your isolated `routine/eng-{date}-{slug}` branch to origin and open a
+  DRAFT PR (see Draft-PR Flow below) — draft only, never merge
 - refactor safely
 
 You MUST NOT:
-- push to main (or any remote) or open/merge PRs (these are shared-state
-  actions — recommend them, do not perform them)
-- merge PRs
+- push to main or to any pre-existing branch (ONLY the fresh
+  `routine/eng-*` branch you created this run may be pushed)
+- merge any PR, approve your own PR, or mark your draft PR ready-for-review
+  (promotion to ready and merge are human-gated forever)
 - deploy production
 - rotate, create, or modify secrets
 - delete production data OR delete any asset/file/directory (asset deletion
@@ -164,6 +166,35 @@ You MUST NOT:
   real check pass
 - run destructive git operations (`reset --hard`, `checkout` that strips an
   uncommitted tree, branch deletion, force-push)
+
+## Draft-PR Flow (enabled 2026-07-02 — replaces the stranded-worktree handoff)
+
+Prepared work used to stop in local worktrees, invisible until a human noticed
+the report. Now, after your validation passes on the isolated worktree:
+
+1. **Gate:** confirm the same-day `D:\reports\daily\execution-safety-{date}.md`
+   exists and is non-HALT. If absent, stale, or HALT: do NOT push; fall back to
+   the legacy prepare-locally-and-recommend handoff and prefix the summary
+   `BLOCKED BY EXECUTION-SAFETY — <reason>`.
+2. **Push** the branch as `routine/eng-{date}-{slug}` (fresh branch only —
+   never a pre-existing one).
+3. **Open a DRAFT PR** via `gh pr create --draft` (add label
+   `auto-generated:engineering` if the repo has it; if the label is missing,
+   proceed without it and note that in the report — do not create labels).
+   PR body: task-selection rationale, doc-claim-vs-disk table, validation
+   summary (including N/A checks), risk assessment, linked ESC/plan IDs, and
+   end with: 🤖 Generated with [Claude Code](https://claude.com/claude-code)
+4. **Clean up:** after the PR is open, remove YOUR OWN worktree
+   (`git worktree remove <path>`) — the branch is safe on origin, and stranded
+   `_*-wt` directories are a known litter class. This cleanup of the worktree
+   you created this run is exempt from the asset-deletion gate; deleting
+   anything else remains forbidden.
+5. If push or PR creation fails (auth, network, permissions): do not retry
+   with force; keep the worktree, fall back to the legacy recommend-only
+   handoff, and record the exact failure in §Caveats.
+
+The handoff "Required action" for a prepared change becomes
+`review+merge draft PR <url>`, and the `READY-TO-MERGE:` line lists PR URLs.
 
 ## Working-Tree Isolation (work-loss prevention — highest blast radius)
 
@@ -233,8 +264,9 @@ Produce:
 - validation summary (including N/A checks with reasons)
 - working-tree-integrity confirmation (active tree provably preserved)
 - remaining blockers (with ESC IDs)
-- PR recommendation (branch, base, title, reviewer, risk, lock interaction,
-  worktree cleanup note) — recommend only; do not open it
+- draft PR link (or, if the Draft-PR gate blocked the push, a PR
+  recommendation: branch, base, title, risk, lock interaction — with the
+  block reason)
 - routine compliance checklist
 
 ## Report Location
@@ -277,7 +309,7 @@ this routine is not yet listed in `D:\state\handoff-contract.json`.)
 
 This routine implements one safe, scoped change per run. Route adjacent work elsewhere:
 
-- **Pushing, opening, or merging a PR / deploying** the prepared branch → human-gated; recommend it in the handoff, do not perform it. Deploy verification belongs to `devops-routine`.
+- **Merging a PR, marking it ready-for-review, or deploying** → human-gated; open the DRAFT PR (Draft-PR Flow), then stop. Deploy verification belongs to `devops-routine`.
 - **Deciding WHAT to build or sequencing the day's work** → `daily-planner-routine` / `orchestration-routine` produce the approved plan this routine consumes.
 - **Validating quality / regression / release-readiness** of the change → `qa-routine`. This routine runs scoped validation on its own diff; portfolio QA is separate.
 - **Secret rotation, infra/CI changes, asset deletion, or any MUST-NOT item** → escalate via `ESC-NNN`; security work → `security-routine`, infra → `devops-routine`.

@@ -130,11 +130,22 @@ file, not the reverse"). It isn't yet — Phase F re-timing is still pending:
 | capability-benchmarking | fortnightly | weekly | 2× intended cost |
 | innovation-backlog | fortnightly | weekly | 2× intended cost |
 | **r11-safe-resolver** | daily 09:30 | **ABSENT** | execution-queue never drains — the DAG's only autonomous executor is missing |
-| vault-competitive-intel-refresh | not in JSON | quarterly | unregistered → invisible to fleet-health expectations |
-| pillarworks-m3-qs-benchmark-tracker | not in JSON | weekly | unregistered → invisible to fleet-health expectations |
+| vault-competitive-intel-refresh | not in JSON | quarterly | operator-level routine (writes personal vault notes, no dated report) — intentionally OUT of the fleet DAG |
+| pillarworks-m3-qs-benchmark-tracker | not in JSON | weekly | operator-level nudge (no dated report artefact) — intentionally OUT of the fleet DAG |
 
-**Fix (quick win):** apply Phase F re-timing (backup scheduler state first — known clobber
-trap), register r11 + the two unregistered routines in the JSON, restore fortnightly cadences.
+**RESOLVED 2026-07-02** (scheduler state backed up to
+`~\.claude\scheduled-tasks.bak-2026-07-02` first):
+- qa/devops/cto/fleet-security-audit crons re-aligned to canonical.
+- r11-safe-resolver re-registered (daily ~09:38, after execution-safety, before
+  fleet-health). It remains DISARMED report-only until the operator sets
+  `"r11_armed": true` in `D:\.claude\settings.executor.json`.
+- The four fortnightly routines keep weekly crons (5-field cron cannot express
+  alternating weeks) but now carry an ISO-week-parity gate in their prompts:
+  they run only on EVEN ISO weeks and emit a one-line SKIP otherwise.
+- The two operator-level routines are documented as out-of-fleet (above), not
+  force-registered — fleet-health would false-alarm on report paths that never exist.
+- engineering-routine upgraded to the draft-PR executor (07-pr-lifecycle.md):
+  pushes `routine/eng-*` + opens DRAFT PRs, gated by same-day execution-safety.
 
 ## Per-routine audit (condensed)
 
