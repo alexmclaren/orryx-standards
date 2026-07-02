@@ -1,3 +1,10 @@
+<!-- orryx-harness-pointer:v1 -->
+> **Canonical execution protocol:** [CLAUDE.base.md in orryx-standards](https://github.com/orryx/orryx-standards/blob/main/CLAUDE.base.md)
+> Read that first. The content below is this repository's specific overrides and context.
+> Shared slash commands (/loop, /plan, /verify, /review) live in .claude/commands/.
+
+---
+
 # CLAUDE.md
 
 > Shared repo rules live in `AGENTS.md`. This document defines **execution protocol, autonomy rules, and delivery standards** for Claude in 
