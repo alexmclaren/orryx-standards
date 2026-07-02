@@ -1,5 +1,5 @@
 <!-- orryx-harness-pointer:v1 -->
-> **Canonical execution protocol:** [CLAUDE.base.md in orryx-standards](https://github.com/orryx/orryx-standards/blob/main/CLAUDE.base.md)
+> **Canonical execution protocol:** [CLAUDE.base.md in orryx-standards](https://github.com/alexmclaren/orryx-standards/blob/main/CLAUDE.base.md)
 > Read that first. The content below is this repository's specific overrides and context.
 > Shared slash commands (/loop, /plan, /verify, /review) live in .claude/commands/.
 

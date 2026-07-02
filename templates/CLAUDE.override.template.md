@@ -1,6 +1,6 @@
 # {REPO_NAME} — Claude Execution Protocol
 
-> **Canonical source:** [CLAUDE.base.md in orryx-standards](https://github.com/orryx/orryx-standards/blob/main/CLAUDE.base.md)
+> **Canonical source:** [CLAUDE.base.md in orryx-standards](https://github.com/alexmclaren/orryx-standards/blob/main/CLAUDE.base.md)
 >
 > Read that first for the shared Claude execution protocol across all Orryx repositories.
 > This file contains ONLY repository-specific overrides and context.
