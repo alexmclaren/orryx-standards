@@ -35,6 +35,9 @@ all `D:\` access (Bash fails on `D:\` paths). `{date}` = today, ISO YYYY-MM-DD.
   Idempotent (sentinel `<!-- orryx-harness-pointer:v1 -->` guards against
   double-prepend), dry-run by default, `-Apply` to write, `-Only <names>` to
   scope, worktree deny-pattern, self-skips the standards repo's own commands.
+- `D:\orryx-standards\scripts\snapshot-routine-prompts.ps1` — refreshes the
+  versioned copy of every fleet routine prompt into
+  `orryx-standards\routines\prompts\` (personal `japan-*` tasks excluded).
 
 ## Tasks (in order)
 
@@ -54,6 +57,15 @@ all `D:\` access (Bash fails on `D:\` paths). `{date}` = today, ISO YYYY-MM-DD.
    Creates missing thin pointers, prepends the pointer header to un-pointed
    CLAUDE.md files, installs missing shared commands — skipping (never
    overwriting) any repo-specific command of the same name.
+
+3b. **Refresh the prompt snapshot (added 2026-07-02, every run — even when the
+   harness itself is in sync).** Run:
+   `& 'D:\orryx-standards\scripts\snapshot-routine-prompts.ps1'`.
+   Then `git -C D:\orryx-standards status --short routines/prompts` — list any
+   changed prompt files in the report (which routine, lines +/-). Leave the
+   changes uncommitted for the human-gated commit flow, same as the harness
+   files. This keeps fleet-health's prompt-drift check honest: a live SKILL.md
+   edit that never lands in the versioned snapshot within 3 days is flagged.
 
 4. **Verify the apply (idempotency proof).** Re-run the dry-run once more;
    confirm it now reports everything `skipped`/`conflict`. Spot-check that no

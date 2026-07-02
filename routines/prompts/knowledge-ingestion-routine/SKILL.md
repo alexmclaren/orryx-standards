@@ -52,7 +52,7 @@ For every input report you consume, compute `input_age_days` = today − the inp
 | **DEGRADE** | `2 < input_age_days ≤ 7` | Cap derived severity at `HIGH` (demote `CRITICAL`→`HIGH`, append `(severity capped: input N days stale, unverified since {last_verified})`); prefix the title `⚠ STALE(Nd):`; list in §Caveats with exact age. |
 | **ABORT** | `input_age_days > 7` | Do NOT emit derived escalations as actionable. Emit once: `UPSTREAM STALE — <producer> has not run in N days (newest input {date}). No escalations verified this cycle; prior ledger entries held at status quo, NOT re-aged.` Do not increment run counters or advance `last_seen`. |
 
-Ledger discipline: while inputs are ABORT-stale, the Auto-close rule (2 non-reproducing runs → resolved) and Stuck rule (>5 runs → raise severity) are SUSPENDED — note the suspension in §Caveats. Do not mutate a ledger entry's age fields under ABORT. NB: the `knowledge-index.json` UPSERT must NOT ingest an ABORT-stale report as a current fact — skip it and note the stale upstream in the ingestion summary rather than indexing it as fresh.
+Ledger discipline: while inputs are ABORT-stale, the Auto-close rule (2 non-reproducing runs → resolved) and Stuck rule (>5 runs → raise severity) are SUSPENDED — note the suspension in §Caveats. Do not mutate a ledger entry's age fields under ABORT. NB: never present an ABORT-stale report's content as a current fact in the ingestion summary — note the stale upstream instead.
 
 Tasks:
 1. Identify new knowledge sources.
@@ -75,13 +75,15 @@ Output location:
 `D:\reports\evolution\knowledge-ingestion-{date}.md` (supersedes prior dated
 file; lead with a delta — what's newly ingested since last run)
 
-Optional state output:
-`D:\state\knowledge-index.json` (idempotent UPSERT — never delete or
-overwrite prior entries; merge by stable key)
+RETIRED output — do NOT write `D:\state\knowledge-index.json`. (Retired
+2026-07-02: audit found zero consumers — no routine ever queried it, and it
+had silently stalled since 2026-05-23. The dated report above IS the
+knowledge artefact; durable persistence belongs to memory-consolidation.
+The old file is preserved as `knowledge-index.retired-2026-07-02.json`.)
 
 Downstream consumers: `memory-consolidation-routine`,
-`deep-research-routine`, `cto-routine`, and any routine querying the
-knowledge index for institutional memory.
+`deep-research-routine`, `cto-routine` (via the dated report's Machine
+Handoff table).
 
 Required output format:
 

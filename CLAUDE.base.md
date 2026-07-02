@@ -330,7 +330,7 @@ For:
 1. Summarize completed work
 2. Extract key learnings
 3. Compress context (200K → 5K tokens)
-4. Write learnings to Pinecone
+4. Write learnings back per §13 (file-based memory)
 5. Continue with summary + current work
 
 ## 9.4 Staged Execution (NEW)
@@ -542,96 +542,39 @@ rg "{function_name}\(" --type {language}
 
 ---
 
-# 13. PINECONE MEMORY INTEGRATION (NEW)
+# 13. MEMORY & WRITEBACK (FILE-BASED)
 
-## 13.1 Before Planning
+> Rewritten 2026-07-02. The former §13 mandated Pinecone queries/writes, but the
+> vector store was never deployed (DEC-D17 deferred it) — every mandated call was a
+> silent no-op, which trained agents to ignore this section. This contract uses only
+> infrastructure that exists. If DEC-D17 un-defers, a vector index gets built OVER
+> these files as retrieval; the files stay the source of truth.
 
-**Query Pinecone for:**
-- Similar implementations in this repo
-- Architecture decisions related to this domain
-- Debugging solutions for related issues
-- Patterns that worked before
-- Known anti-patterns to avoid
+## 13.1 Before Starting (read)
 
-**Query format:**
-```typescript
-retrievePlanningContext({
-  task_type: "feature_implementation",
-  domain: "authentication",
-  repo: "pillarworks",
-  keywords: ["login", "session", "JWT"]
-})
-```
+- Operator memory: `C:\Users\alexa\.claude\projects\D--\memory\MEMORY.md` and any
+  referenced `project_*` / `reference_*` entries relevant to the task
+- The repo's `docs/solutions/` (documented past fixes) and `CLAUDE.md`
+- `D:\state\DECISIONS.md` Section 0 (recent deltas) for fleet-scope work
 
-## 13.2 Before Editing
+Treat recalled entries as advisory — verify against current disk/git before acting.
 
-**Query Pinecone for:**
-- Code review findings for this file
-- Debugging history of this file
-- Known issues or gotchas
-- Successful patterns in this module
-- Recent changes and their outcomes
+## 13.2 After Completing (write — the task is NOT done without this)
 
-**Query format:**
-```typescript
-retrieveEditContext({
-  file: "backend/auth/login.py",
-  operation: "modify_function",
-  function: "login_user"
-})
-```
+| What you learned | Where it goes |
+|---|---|
+| Decision made + rationale | escalation → `D:\state\governance-decisions.json` (human-ratified); consolidated nightly into `DECISIONS.md` |
+| Durable trap / reusable fix / anti-pattern | repo `docs/solutions/` (ce-compound) or operator memory `reference_*` entry + MEMORY.md index line |
+| Project state change | repo STATUS.md and/or the dated report your routine already emits |
+| Future work discovered | escalation ledger, execution queue, or innovation backlog — never prose-only |
+| Routine prompt improvement | PR against `orryx-standards/routines/prompts/` — never a direct live SKILL.md edit |
 
-## 13.3 Before Debugging
+## 13.3 Rules
 
-**Query Pinecone for:**
-- Similar error messages and their fixes
-- Incidents related to this area
-- Known root causes for this error type
-- Anti-patterns that cause this issue
-
-**Query format:**
-```typescript
-retrieveDebuggingContext({
-  error: "NoneType object has no attribute 'email'",
-  files: ["backend/auth/login.py", "backend/models/user.py"],
-  severity: "high"
-})
-```
-
-## 13.4 After Story Completion
-
-**Write to Pinecone:**
-- What worked (successful patterns)
-- What didn't work (anti-patterns to avoid)
-- Key learnings and decisions
-- Files modified and why
-- Edge cases discovered
-
-**Write format:**
-```typescript
-writeMemory({
-  type: "pattern",
-  content: "JWT session management pattern with refresh tokens",
-  metadata: {
-    repo: "pillarworks",
-    domain: "authentication",
-    files: ["backend/auth/login.py", "backend/auth/session.py"],
-    tags: ["authentication", "JWT", "session", "security"],
-    confidence: 0.9,
-    validated: true
-  }
-})
-```
-
-## 13.5 Auto-Write Triggers
-
-**Automatically write to Pinecone when:**
-- ✅ Session compaction (every 3 stories)
-- ✅ ADR created
-- ✅ Debugging solution found (tests now pass)
-- ✅ Incident resolved
-- ✅ Pattern identified (reusable across repos)
-- ✅ Anti-pattern discovered (to avoid in future)
+- One canonical home per fact — link to it, never copy it into a second surface.
+- Convert relative dates to absolute (ISO) in anything durable.
+- Never write secret values into memory, reports, or prompts.
+- A learning that exists only in the conversation transcript is a leak, not a learning.
 
 ---
 
@@ -652,7 +595,7 @@ writeMemory({
 - ✅ Documentation updated (README, ADRs, inline comments where needed)
 - ✅ No regressions introduced (existing tests still pass)
 - ✅ Ready for production OR clearly labelled as WIP/POC
-- ✅ Learnings written to Pinecone memory (for future reference)
+- ✅ Learnings written back per §13 (file-based memory & writeback)
 
 **If ANY item unchecked → task is NOT done.**
 
@@ -949,6 +892,7 @@ Individual repositories add their overrides in their own CLAUDE.md:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.2.0 | 2026-07-02 | §13 rewritten: Pinecone (never deployed, DEC-D17) replaced with file-based memory & writeback contract |
 | 2.1.0 | 2026-06-10 | Restored Perpetual Improvement System (§18) + clinical-era gates lost in v2 migration; added proactive subagent mandate (§19), confidence hard gate (§20), Problem Record convention (§21) |
 | 2.0.0 | 2026-05-18 | Added context management (§9), read-before-edit governance (§11), retry governance (§12), Pinecone integration (§13) |
 | 1.0.0 | 2026-04-27 | Initial canonical baseline |

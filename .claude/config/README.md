@@ -2,6 +2,13 @@
 
 Comprehensive governance configuration for the Orryx Claude Code ecosystem.
 
+> **DEPRECATION NOTE (2026-07-02):** All Pinecone references in these configs
+> (memory-freshness.yaml, codeburn.yaml pinecone_integration, governance.yaml
+> pinecone_* hooks) describe infrastructure that was never deployed — DEC-D17
+> deferred the vector store. The canonical memory contract is now CLAUDE.base.md
+> §13 (file-based memory & writeback, v2.2.0). Treat Pinecone sections here as
+> inert until DEC-D17 un-defers; do not build against them.
+
 ## Overview
 
 This directory contains YAML configuration files that control all governance systems:
