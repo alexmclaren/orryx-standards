@@ -50,6 +50,11 @@ Assess:
 
 Read the **same-date** sibling reports under `D:\reports\`:
 - `architecture/dependency-analysis-{date}.md` (+ `state/dependency-graph.json`)
+  — **weekly, Mondays — use the latest within 8 days; NOT a same-day required
+  input.** (Contract fix 2026-07-03: treating this weekly producer as
+  required-same-day made this routine SKIP every non-Monday — dark 4 days
+  before it was caught. Apply the Input Freshness Gate to it instead: ≤8d =
+  usable, older = flag DEGRADE and synthesize without the structural spine.)
 - `daily/documentation-sync-{date}.md` (+ any `-verification` appendix)
 - `evolution/frontier-architecture-{date}.md` (weekly, Sundays — use latest)
 - `repo-health/<repo>-{date}.md` for every repo (10 orryx-* repos +
