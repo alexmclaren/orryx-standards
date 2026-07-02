@@ -75,6 +75,21 @@ declaring anything dormant. A false DORMANT alarm trains the operator to ignore 
 6. Tally token cost per routine (from exit-log `token_cost` if present) + total.
 7. Compute the delta vs the prior `fleet-health-{date}.md` (newly dormant, recovered,
    newly tripped).
+8. **Writeback verification (added 2026-07-02)** — "it ran" is not "it worked": a
+   routine can emit its report while its real state writeback silently breaks
+   (history: knowledge-index.json stalled 40 days behind OK-looking runs). Checks,
+   all read-only:
+   a. **DECISIONS.md**: if yesterday's `memory-consolidation-routine` exit was OK,
+      `D:\state\DECISIONS.md` LastWriteTime must fall in yesterday's evening window.
+      OK exit + untouched file = 🔴 WRITEBACK-BROKEN row.
+   b. **Prompt-snapshot drift**: hash-compare each live
+      `C:\Users\alexa\.claude\scheduled-tasks\<routine>\SKILL.md` against its
+      versioned copy in `D:\orryx-standards\routines\prompts\<routine>\SKILL.md`.
+      Diffs are expected briefly (snapshot lags edits); the same routine drifting
+      **>3 consecutive days** = 🟠 unversioned prompt drift (a live edit nobody
+      committed — the exact failure class prompt versioning exists to prevent).
+   c. If a routine's registry entry names a state output (not just a report), an
+      OK exit with that state file unmodified is a WRITEBACK-BROKEN row too.
 
 ## Output
 
@@ -93,6 +108,10 @@ RAN: x/N   SKIPPED: y   FAILED: z   DORMANT: d   TRIPPED: t
 
 ## Validation failures this cycle
 - <routine>: <reason codes> (<attempts>x)
+
+## Writeback checks
+- DECISIONS.md: written {datetime} after memory-consolidation OK ✅ / WRITEBACK-BROKEN 🔴
+- Prompt snapshot: <N> routines drifted (<names>, <days>d) / in sync ✅
 
 ## Breaker state
 - <routine>: tripped (Nx consecutive FAIL) — needs human reset

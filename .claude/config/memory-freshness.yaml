@@ -2,6 +2,10 @@
 # Version: 1.0.0
 # Last Updated: 2026-05-18
 #
+# DEPRECATED 2026-07-02: Pinecone was never deployed (DEC-D17 deferred the
+# vector store). Canonical memory contract = CLAUDE.base.md §13 (file-based).
+# This file is inert; kept for reference until DEC-D17 un-defers.
+#
 # Manages Pinecone memory lifecycle: expiration, archival, validation
 
 version: "1.0.0"
