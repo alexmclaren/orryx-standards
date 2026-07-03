@@ -186,6 +186,39 @@ Generate:
 `D:\reports\approvals\approval-summary-{date}.md` (supersedes the prior dated
 file; lead with a delta vs prior queue).
 
+# DECIDE TODAY digest (added 2026-07-03 — the operator's single morning artefact)
+
+ALSO write `D:\reports\daily\DECIDE-TODAY.md` — **stable path, overwritten every
+run**. This is the one file the operator opens instead of ten reports; the dated
+approval summary above remains the audit trail. It is a VIEW, never a source:
+every item carries its canonical ID (HA-NNN / ESC-CEO-NNN / SR-NN / PR URL) so
+closure flows back through the owning surface; never introduce an item that is
+not in the approval queue, `queue.yaml`, the escalation ledger, the rotation
+ledger, or an open PR list.
+
+Content contract — one screen, ruthless selectivity:
+
+1. Header: `# DECIDE TODAY — {date}` plus one line of counts
+   (`N to decide · M new since yesterday · K overdue`).
+2. **Decide now** (max 7 rows, ranked by severity × unblocks_count × age_days):
+   each row = canonical ID · one-line ask · risk-if-deferred · **one-click
+   action** — the exact command, path, or URL (`gh pr merge <url>`, the prepared
+   runbook path, the console deep-link). Never "review X" without the artefact
+   link. Rows 8+ exist only as a count ("+N lower-priority in approval-summary").
+3. **FYI** (max 5 lines): what happened autonomously since yesterday — merges,
+   r11 PRs opened, rotations that aged (with day counts).
+4. **Quiet day:** if no human decision is genuinely required, the file is three
+   lines saying exactly that. Never pad a quiet day into fake urgency — that
+   trains the operator to skim.
+
+Extra inputs for the digest (read-only; do NOT write to any of them):
+`D:\orryx-control-plane\human-actions\queue.yaml` (pending HA items),
+`D:\state\ceo-escalations.json` (open ESC-CEO), the latest
+`D:\reports\security\secret-rotation-*.md` ledger, and
+`gh pr list --author "@me" --state open` across the active repos for PRs
+awaiting human merge (`routine/eng-*`, `auto/r11-*`, drafts). Severities carry
+verbatim; ranking is presentation only.
+
 # Execution-Queue Producer (you fill r11's inbox)
 
 `r11-safe-resolver` consumes `D:\state\execution-queue\pending\*.json` but has no
