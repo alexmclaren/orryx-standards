@@ -6,7 +6,7 @@
 
 | Repo | CLAUDE.md | Commands | Notes |
 |---|---|---|---|
-| orryx-brain | skipped (already pointed) | add:[] conflict:[loop.md,plan.md,verify.md,review.md] |  |
+| orryx-brain | updated (header prepended) | add:[loop.md,plan.md,verify.md] conflict:[review.md] |  |
 | orryx-flow | skipped (already pointed) | add:[] conflict:[loop.md,plan.md,verify.md,review.md] |  |
 | orryx-mcp-gateway | skipped (already pointed) | add:[] conflict:[loop.md,plan.md,verify.md,review.md] |  |
 | orryx-core | skipped (already pointed) | add:[] conflict:[loop.md,plan.md,verify.md,review.md] |  |
@@ -19,16 +19,16 @@
 | orryx-website | skipped (already pointed) | add:[] conflict:[loop.md,plan.md,verify.md,review.md] |  |
 | orryx-repair-intelligence | skipped (already pointed) | add:[] conflict:[loop.md,plan.md,verify.md,review.md] |  |
 | orryx-standards | skipped (already pointed) | source-repo (commands/ is canonical; no copy) |  |
-| pillarworks-build-mvp | skipped (already pointed) | add:[] conflict:[loop.md,plan.md,verify.md,review.md] |  |
+| pillarworks-build-mvp | updated (header prepended) | add:[] conflict:[loop.md,plan.md,verify.md,review.md] |  |
 | pillarworks-demo | skipped (already pointed) | add:[] conflict:[loop.md,plan.md,verify.md,review.md] |  |
 | Pillarworks-Enterprise-Website | skipped (already pointed) | add:[] conflict:[loop.md,plan.md,verify.md,review.md] |  |
-| Clinical.Trials | skipped (already pointed) | add:[] conflict:[loop.md,plan.md,verify.md,review.md] |  |
+| Clinical.Trials | updated (header prepended) | add:[] conflict:[loop.md,plan.md,verify.md,review.md] |  |
 | brisbane-gynae-fertility | skipped (already pointed) | add:[] conflict:[loop.md,plan.md,verify.md,review.md] |  |
 | midnight-raid-analyser | skipped (already pointed) | add:[] conflict:[loop.md,plan.md,verify.md,review.md] |  |
 | cavalier-rescue | skipped (already pointed) | add:[] conflict:[loop.md,plan.md,verify.md,review.md] |  |
 | property-maintenance-os | skipped (already pointed) | add:[] conflict:[loop.md,plan.md,verify.md,review.md] |  |
 
-**Summary:** created=0  updated=0  skipped=21  total=21
+**Summary:** created=0  updated=3  skipped=18  total=21
 
 > DRY-RUN — no files were modified. Re-run with `-Apply` to write changes.
 
