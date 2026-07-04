@@ -80,6 +80,18 @@ Before writing today's report:
 4. Track each escalation by stable ID (`ESC-CEO-NNN`). Reuse IDs across runs — do not renumber. Allocate new IDs only for genuinely new issues. Never reuse a retired ID for a different issue.
 5. Update `/state/ceo-escalations.json` after the report is written. Ledger schema per entry: `{id, title, severity, opened, last_seen, last_verified, status, owner, decision_required, suggested_approver, source_report, runs_persisted, change_note}`. Increment `runs_persisted` by 1 for every escalation reproduced this run; set to 1 for new escalations.
 6. If a ledger escalation is not reproduced in today's inputs, mark `status: "stale — verify with owner"` rather than silently dropping it. Do not increment its `runs_persisted`.
+7. **Aged-entry re-verification (added 2026-07-03 — kills ledger rot).** Each run,
+   take the TWO open entries with the oldest `last_verified` (only those older
+   than 14 days) and re-verify each directly at ground truth (git/gh/disk — e.g.
+   `git log origin/main --oneline -- <path>`, `gh pr list --search`, file
+   existence) before re-emitting it. If reality shows it resolved, close it with
+   `change_note: "closed by re-verification {date}: <one-line evidence>"`. Two
+   per run bounds the token cost while guaranteeing every open entry gets
+   re-checked at least monthly. Audited example this rule exists for: on
+   2026-07-03 the ledger carried ESC-CEO-015 (CF token — actually resolved
+   2026-07-01) and ESC-CEO-031 (static-key workflows — actually cut over by
+   CT PR #134) as open. A ledger that lags reality by weeks trains the operator
+   to distrust every CRITICAL in it.
 
 ### First-Run Bootstrap
 If `/state/ceo-escalations.json` does NOT exist (first ledgered run):
