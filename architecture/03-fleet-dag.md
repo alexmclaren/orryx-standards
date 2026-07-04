@@ -10,7 +10,7 @@ flowchart TD
   subgraph L0["L0 — root producers — scan ground truth directly, never consume sibling reports"]
     fleet_security_audit["fleet-security-audit<br/>monthly · 0 3 1 * *"]
     repo_scanner["repo-scanner<br/>daily · 30 4 * * *"]
-    competitive_intelligence_routine["competitive-intelligence-routine<br/>weekly · 0 8 * * 6"]
+    competitive_intelligence_routine["competitive-intelligence-routine<br/>fortnightly · 0 8 * * 6"]
     deep_research_routine["deep-research-routine<br/>weekly · 0 7 * * 0"]
   end
   subgraph L1["L1 — synthesis producers — consume L0, emit domain intelligence"]
