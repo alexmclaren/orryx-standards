@@ -80,10 +80,16 @@ All products MUST:
 
 ### Frontend
 - **Language**: TypeScript 5.x
-- **Framework**: React 18.2.x
+- **Framework**: React 18.2.x (default) — see approved exceptions below
 - **Build Tool**: Vite 5.x (or Next.js 14 for SSR)
 - **Styling**: TailwindCSS 3.x
 - **Testing**: Vitest
+
+**Approved exceptions:**
+- **orryx-flow** ships React 19.2 + TypeScript 6 + Vite 8 (see
+  `orryx-flow/frontend/package.json`). Granted 2026-07-05 — flow is a newer
+  standalone app on the current React line. React 18 remains the default for all
+  other frontends unless a like exception is recorded here.
 
 ### Infrastructure
 - **Platform**: AWS
@@ -98,7 +104,8 @@ All products MUST:
 
 ❌ **Do NOT use**:
 - Node.js/Express for new backend services (use FastAPI)
-- React 19 (use React 18 for stability)
+- React 19 for NEW frontends without a recorded exception (React 18 is the
+  default for stability; existing approved exceptions are listed under Frontend)
 - Railway (use AWS)
 - Hardcoded secrets (use AWS Secrets Manager)
 
