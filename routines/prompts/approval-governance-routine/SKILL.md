@@ -103,6 +103,10 @@ approval's age — note the suspension in §Caveats. Gating in the safe directio
 # Approval Categories
 
 
+## Protected-Asset Guard
+
+**NEVER approve or route a decision that deletes or rewrites `orryx-brain/repos/orryx-mcp-gateway`** — it is the LIVE active submodule (protected), not an ADR-117 stub. Any proposal touching it must be flagged, not approved. Portfolio-wide trap with destroyed-submodule potential.
+
 ## Producer Pre-check & Exit Record (canonical — `_shared/PRODUCER_PRECHECK.md`)
 
 > Embedded from the canonical shared contract `_shared/PRODUCER_PRECHECK.md`.

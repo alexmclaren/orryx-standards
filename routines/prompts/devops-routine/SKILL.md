@@ -70,6 +70,10 @@ Note: security reports are NOT guaranteed daily — a security input legitimatel
 Recurring trap: `repo-health` portfolio-summary can lag 1–2 days specifically for `Clinical.Trials` (separate region/slug, slower scan) — when only its row is stale, DEGRADE the Clinical.Trials-derived blockers and re-verify them directly via `gh` rather than ABORTing the whole run.
 
 
+## Protected-Asset Guard
+
+**NEVER recommend deleting or rewriting `orryx-brain/repos/orryx-mcp-gateway`** — it is the LIVE active submodule (protected), not an ADR-117 stub. Exclude it from any teardown, cleanup, or deletion recommendation. Portfolio-wide trap with destroyed-submodule potential.
+
 ## Producer Pre-check & Exit Record (canonical — `_shared/PRODUCER_PRECHECK.md`)
 
 > Embedded from the canonical shared contract `_shared/PRODUCER_PRECHECK.md`.

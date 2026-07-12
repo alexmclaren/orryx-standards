@@ -103,6 +103,17 @@ not run yet today), do NOT synthesize: emit the exit record below with
 and STOP. You will be picked up next window once the producer runs. (Producers /
 ground-truth scanners with no required dated inputs skip this step.)
 
+> **[ROUTINE-SPECIFIC CARVE-OUT — do NOT SKIP on these]** `dependency-analysis`
+> (+ `state/dependency-graph.json`) and `frontier-architecture` are **WEEKLY**
+> producers (Mon / Sun), NOT same-day inputs — never treat their absence as a
+> same-day SKIP trigger. Apply the Input Freshness Gate to them instead (≤8d
+> usable; older = DEGRADE and synthesize without the structural spine). The ONLY
+> same-day inputs whose absence gates this routine are the daily ones
+> (`documentation-sync`, the per-repo `repo-health` cohort). Treating the weekly
+> `dependency-analysis` as required-same-day is exactly what dark-SKIPped this
+> routine 6 days running (06-30→07-04) — the generic rule above must be read
+> through this carve-out.
+
 **2. Catch-up rule.** If your newest output is dated before today, you are catching
 up after a dark day: produce exactly ONE run dated today; do NOT backfill missed
 dates; lead the report with `catch_up: true, missed_days: N`.

@@ -182,6 +182,10 @@ non-contracted routines.)
   `engineering-routine` post-approval. This routine only plans.
 
 
+## Protected-Asset Guard
+
+**NEVER recommend deleting or rewriting `orryx-brain/repos/orryx-mcp-gateway`** — it is the LIVE active submodule (protected), not an ADR-117 stub. Exclude it from any teardown, cleanup, or deletion plan element. Portfolio-wide trap with destroyed-submodule potential.
+
 ## Producer Pre-check & Exit Record (canonical — `_shared/PRODUCER_PRECHECK.md`)
 
 > Embedded from the canonical shared contract `_shared/PRODUCER_PRECHECK.md`.
