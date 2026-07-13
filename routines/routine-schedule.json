@@ -8,59 +8,486 @@
     "cadence_rationale": "Daily is justified only when the input changes daily AND a day of staleness causes harm. Freshness-critical (security, safety, repo state) + the operator-facing governance spine stay daily; strategic/evolution routines that synthesize slow-moving internal state run weekly/fortnightly or are condition-triggered with a NO_CHANGE skip.",
     "circular_dep_adr": "daily-planner <-> orchestration is broken by TEMPORAL SPLIT: orchestration runs night-of (N, 23:xx) over the full same-day cohort and SEEDS the next morning; daily-planner (N+1 morning) consumes the PRIOR-NIGHT master-operating-plan(N). The edge is one-directional across days: producers(N) -> orchestration(N) -> daily-planner(N+1). Do NOT move orchestration to morning (would re-introduce the spine-gap race).",
     "layers": {
-      "L0": "root producers — scan ground truth directly, never consume sibling reports",
-      "L1": "synthesis producers — consume L0, emit domain intelligence",
-      "L2": "specialised consumers — single-domain synthesis over L1",
-      "L3": "governance synthesizers — consume the full L2 cohort",
-      "L4": "meta/evolution — weekly/fortnightly improvement loops",
-      "L5": "state/continuity — eod, memory, knowledge",
-      "L6": "executors/propagators — act on decisions (gated)"
+      "L0": "root producers \u2014 scan ground truth directly, never consume sibling reports",
+      "L1": "synthesis producers \u2014 consume L0, emit domain intelligence",
+      "L2": "specialised consumers \u2014 single-domain synthesis over L1",
+      "L3": "governance synthesizers \u2014 consume the full L2 cohort",
+      "L4": "meta/evolution \u2014 weekly/fortnightly improvement loops",
+      "L5": "state/continuity \u2014 eod, memory, knowledge",
+      "L6": "executors/propagators \u2014 act on decisions (gated)"
     }
   },
   "routines": {
-    "fleet-security-audit":        {"cadence": "monthly",     "cron": "0 3 1 * *",   "layer": "L0", "depends_on": [],                          "required_inputs": [],                                              "produces": "D:\\security-audit\\monthly\\{ym}\\REPORT.md",            "id_prefix": "FSA"},
-    "repo-scanner":                {"cadence": "daily",       "cron": "30 4 * * *",  "layer": "L0", "depends_on": [],                          "required_inputs": [],                                              "produces": "D:\\reports\\repo-health\\portfolio-summary-{date}.md",   "id_prefix": null},
-    "competitive-intelligence-routine": {"cadence": "fortnightly", "cron": "0 8 * * 6",  "layer": "L0", "depends_on": [],                     "required_inputs": [],                                              "produces": "D:\\reports\\evolution\\competitive-intelligence-{date}.md","id_prefix": "CI", "note": "weekly->fortnightly 2026-07-03 peak-period trim; ISO-even-week gate in prompt; review 2026-07-31"},
-    "deep-research-routine":       {"cadence": "weekly",      "cron": "0 7 * * 0",   "layer": "L0", "depends_on": [],                          "required_inputs": [],                                              "produces": "D:\\reports\\evolution\\deep-research-{date}.md",         "id_prefix": "DR", "paused_until": "2026-07-31", "note": "peak-period trim; consumers (frontier, innovation-backlog) run on freshness-gated stale input meanwhile"},
-
-    "dependency-graph-builder":    {"cadence": "weekly",      "cron": "0 5 * * 1",   "layer": "L1", "depends_on": ["repo-scanner"],            "required_inputs": ["portfolio-summary"],                           "produces": "D:\\reports\\architecture\\dependency-analysis-{date}.md","id_prefix": "ESC"},
-    "documentation-sync":         {"cadence": "condition",   "cron": "0 5 * * *",   "layer": "L1", "depends_on": ["repo-scanner"],            "required_inputs": ["portfolio-summary"],                           "produces": "D:\\reports\\daily\\documentation-sync-{date}.md",        "id_prefix": null, "condition": "NO_CHANGE skip if no commits to main since last run"},
-    "security-routine":           {"cadence": "daily",       "cron": "20 5 * * *",  "layer": "L1", "depends_on": ["repo-scanner"],            "required_inputs": ["portfolio-summary"],                           "produces": "D:\\reports\\security\\security-review-{date}.md",        "id_prefix": "NEW|F|ESC", "freshness": "1/3"},
-    "git-hygiene-routine":        {"cadence": "daily",       "cron": "30 5 * * *",  "layer": "L1", "depends_on": ["repo-scanner"],            "required_inputs": [],                                               "produces": "D:\\reports\\git-recovery\\git-hygiene-{date}.md",        "id_prefix": "GH"},
-    "harness-propagation-routine":{"cadence": "condition",   "cron": "45 5 * * *",  "layer": "L1", "depends_on": [],                          "required_inputs": [],                                               "produces": "D:\\reports\\harness\\harness-propagation-{date}.md",     "id_prefix": "HP", "condition": "NO_CHANGE skip if CLAUDE.base.md/commands unchanged since last run"},
-
-    "qa-routine":                 {"cadence": "daily",       "cron": "0 6 * * *",   "layer": "L2", "depends_on": ["security-routine","dependency-graph-builder","documentation-sync"], "required_inputs": ["security-review"], "produces": "D:\\reports\\qa\\qa-summary-{date}.md",      "id_prefix": "QA"},
-    "devops-routine":             {"cadence": "daily",       "cron": "12 6 * * *",  "layer": "L2", "depends_on": ["security-routine","repo-scanner"], "required_inputs": ["security-review"],                     "produces": "D:\\reports\\devops\\devops-summary-{date}.md",           "id_prefix": "DO", "freshness": "1/3"},
-    "cto-routine":                {"cadence": "daily",       "cron": "35 6 * * *",  "layer": "L2", "depends_on": ["security-routine","qa-routine","devops-routine","dependency-graph-builder"], "required_inputs": ["security-review","qa-summary"], "produces": "D:\\reports\\architecture\\cto-review-{date}.md", "id_prefix": "ESC"},
-    "product-routine":            {"cadence": "weekly",      "cron": "50 6 * * 1",  "layer": "L2", "depends_on": ["cto-routine","qa-routine","security-routine"], "required_inputs": ["cto-review"],               "produces": "D:\\reports\\daily\\product-review-{date}.md",            "id_prefix": "PR"},
-    "commercialstrategy-routine": {"cadence": "weekly",      "cron": "0 7 * * 3",   "layer": "L2", "depends_on": ["product-routine","cto-routine"], "required_inputs": ["product-review"],                  "produces": "D:\\reports\\daily\\commercial-review-{date}.md",         "id_prefix": "CS"},
-    "release-changelog-routine":  {"cadence": "condition",   "cron": "20 7 * * *",  "layer": "L2", "depends_on": ["devops-routine"], "required_inputs": [],                                                   "produces": "D:\\reports\\daily\\release-readiness-{date}.md",         "id_prefix": "RC", "condition": "NO_CHANGE skip unless merge to main since last run"},
-    "secret-rotation-tracker":    {"cadence": "daily",       "cron": "30 7 * * *",  "layer": "L2", "depends_on": ["security-routine"], "required_inputs": ["security-review"],                       "produces": "D:\\reports\\security\\secret-rotation-{date}.md",        "id_prefix": "SR", "freshness": "1/3"},
-    "finops-routine":             {"cadence": "weekly",      "cron": "0 7 * * 5",   "layer": "L2", "depends_on": ["devops-routine","repo-scanner"], "required_inputs": [],                                  "produces": "D:\\reports\\finops\\finops-review-{date}.md",            "id_prefix": "FO"},
-    "mvp-delivery-routine":       {"cadence": "weekly",      "cron": "30 6 * * 1",  "layer": "L2", "depends_on": ["product-routine"], "required_inputs": [],                                        "produces": "D:\\reports\\daily\\mvp-progress-{date}.md",              "id_prefix": "MV"},
-
-    "ceo-routine":                {"cadence": "daily",       "cron": "15 8 * * *",  "layer": "L3", "depends_on": ["cto-routine","security-routine","devops-routine","qa-routine"], "required_inputs": ["security-review"], "produces": "D:\\reports\\daily\\ceo-summary-{date}.md", "id_prefix": "ESC-CEO", "quiet_day_aware": true},
-    "daily-planner-routine":      {"cadence": "daily",       "cron": "30 8 * * *",  "layer": "L3", "depends_on": ["ceo-routine"], "required_inputs": ["master-operating-plan(N-1)"],            "produces": "D:\\reports\\daily\\daily-plan-{date}.md",                "id_prefix": "DP", "note": "consumes PRIOR-NIGHT master-operating-plan; see circular_dep_adr"},
-    "approval-governance-routine":{"cadence": "daily",       "cron": "45 8 * * *",  "layer": "L3", "depends_on": ["ceo-routine","daily-planner-routine"], "required_inputs": ["ceo-summary"],                  "produces": "D:\\reports\\approvals\\approval-summary-{date}.md",      "id_prefix": "AG", "also_produces": "D:\\state\\execution-queue\\pending\\*.json (safelist-eligible actions for r11)", "quiet_day_aware": true},
-    "execution-safety-routine":   {"cadence": "daily",       "cron": "0 9 * * *",   "layer": "L3", "depends_on": ["ceo-routine","approval-governance-routine","security-routine"], "required_inputs": ["security-review","approval-summary"], "produces": "D:\\reports\\daily\\execution-safety-{date}.md", "id_prefix": null},
-
-    "engineering-routine":        {"cadence": "daily",       "cron": "15 9 * * *",  "layer": "L6", "depends_on": ["execution-safety-routine","daily-planner-routine"], "required_inputs": ["execution-safety","daily-plan"], "produces": "D:\\reports\\daily\\engineering-{date}.md", "id_prefix": "ENG", "note": "NO_CHANGE skip on no-commit days"},
-    "r11-safe-resolver":          {"cadence": "daily",       "cron": "30 9 * * *",  "layer": "L6", "depends_on": ["execution-safety-routine","approval-governance-routine"], "required_inputs": ["execution-safety"], "produces": "D:\\reports\\r11\\r11-safe-resolver-{date}.md", "id_prefix": "R11", "gate": "live action requires same-day execution-safety = non-HALT AND non-empty execution-queue; else SKIP"},
-
-    "failure-analysis-routine":   {"cadence": "daily",       "cron": "0 18 * * *",  "layer": "L4", "depends_on": [],                          "required_inputs": ["eod-summary(N-1)"],                            "produces": "D:\\reports\\evolution\\failure-analysis-{date}.md",      "id_prefix": "FA", "note": "MUST run before memory-consolidation"},
-    "end-of-day-distillation-routine": {"cadence": "daily",  "cron": "30 18 * * *", "layer": "L5", "depends_on": ["ceo-routine"],             "required_inputs": ["ceo-summary"],                                 "produces": "D:\\reports\\daily\\eod-summary-{date}.md",               "id_prefix": "EOD"},
-    "memory-consolidation-routine":{"cadence": "daily",      "cron": "0 19 * * *",  "layer": "L5", "depends_on": ["failure-analysis-routine","end-of-day-distillation-routine"], "required_inputs": ["eod-summary"], "produces": "D:\\state\\DECISIONS.md (+ memory-consolidation-{date}.md)", "id_prefix": "MC"},
-    "knowledge-ingestion-routine": {"cadence": "weekly",     "cron": "0 8 * * 0",   "layer": "L5", "depends_on": [],                          "required_inputs": [],                                              "produces": "D:\\reports\\evolution\\knowledge-ingestion-{date}.md",   "id_prefix": "KI"},
-
-    "orchestration-routine":      {"cadence": "daily",       "cron": "30 23 * * *", "layer": "L3", "depends_on": ["ceo-routine","execution-safety-routine","end-of-day-distillation-routine","memory-consolidation-routine"], "required_inputs": ["ceo-summary"], "produces": "D:\\reports\\daily\\master-operating-plan-{date}.md", "id_prefix": null, "note": "night-of terminal synthesis; seeds next-morning daily-planner"},
-
-    "autonomous-improvement-routine": {"cadence": "fortnightly", "cron": "0 9 * * 0", "layer": "L4", "depends_on": ["capability-benchmarking-routine"], "required_inputs": [], "produces": "D:\\reports\\evolution\\autonomous-improvement-{date}.md", "id_prefix": "AI", "note": "fortnightly Sun (week B); chain: AI 09:00 -> frontier 10:00 -> prompt-evolution 11:00"},
-    "frontier-architecture-routine": {"cadence": "fortnightly", "cron": "0 10 * * 0", "layer": "L4", "depends_on": ["deep-research-routine"], "required_inputs": [],                          "produces": "D:\\reports\\evolution\\frontier-architecture-{date}.md", "id_prefix": "FRA"},
-    "prompt-evolution-routine":   {"cadence": "weekly",      "cron": "0 11 * * 0",  "layer": "L4", "depends_on": ["frontier-architecture-routine","autonomous-improvement-routine","failure-analysis-routine"], "required_inputs": [], "produces": "D:\\reports\\evolution\\prompt-evolution-{date}.md", "id_prefix": "PE", "note": "runs AFTER the Sun evolution chain"},
-    "capability-benchmarking-routine": {"cadence": "fortnightly", "cron": "0 21 * * 1", "layer": "L4", "depends_on": [],                      "required_inputs": [],                                              "produces": "D:\\reports\\evolution\\capability-benchmark-{date}.md",  "id_prefix": "CB"},
-    "innovation-backlog-routine": {"cadence": "fortnightly", "cron": "0 8 * * 1",   "layer": "L5", "depends_on": ["competitive-intelligence-routine","deep-research-routine","frontier-architecture-routine","failure-analysis-routine"], "required_inputs": [], "produces": "D:\\reports\\evolution\\innovation-backlog-{date}.md", "id_prefix": "IB"},
-    "tooling--mcp-discovery-routine": {"cadence": "weekly",  "cron": "0 21 * * 2",  "layer": "L4", "depends_on": ["frontier-architecture-routine"], "required_inputs": [],                          "produces": "D:\\reports\\evolution\\tooling-mcp-discovery-{date}.md", "id_prefix": "TL", "paused_until": "2026-07-31", "note": "peak-period trim 2026-07-03"},
-
-    "fleet-health-routine":       {"cadence": "daily",       "cron": "45 9 * * *",  "layer": "L5", "depends_on": [],                          "required_inputs": ["fleet-exit-log.jsonl","fleet-expectations.json"], "produces": "D:\\reports\\daily\\fleet-health-{date}.md",            "id_prefix": null, "note": "runs LAST in the morning window; observability beacon, read-only over exit log + validation log"}
+    "fleet-security-audit": {
+      "cadence": "monthly",
+      "cron": "0 3 1 * *",
+      "layer": "L0",
+      "depends_on": [],
+      "required_inputs": [],
+      "produces": "D:\\security-audit\\monthly\\{ym}\\REPORT.md",
+      "id_prefix": "FSA"
+    },
+    "repo-scanner": {
+      "cadence": "daily",
+      "cron": "30 4 * * *",
+      "layer": "L0",
+      "depends_on": [],
+      "required_inputs": [],
+      "produces": "D:\\reports\\repo-health\\portfolio-summary-{date}.md",
+      "id_prefix": null
+    },
+    "competitive-intelligence-routine": {
+      "cadence": "fortnightly",
+      "cron": "0 8 * * 6",
+      "layer": "L0",
+      "depends_on": [],
+      "required_inputs": [],
+      "produces": "D:\\reports\\evolution\\competitive-intelligence-{date}.md",
+      "id_prefix": "CI",
+      "note": "weekly->fortnightly 2026-07-03 peak-period trim; ISO-even-week gate in prompt; review 2026-07-31"
+    },
+    "deep-research-routine": {
+      "cadence": "weekly",
+      "cron": "0 7 * * 0",
+      "layer": "L0",
+      "depends_on": [],
+      "required_inputs": [],
+      "produces": "D:\\reports\\evolution\\deep-research-{date}.md",
+      "id_prefix": "DR",
+      "paused_until": "2026-07-31",
+      "note": "peak-period trim; consumers (frontier, innovation-backlog) run on freshness-gated stale input meanwhile"
+    },
+    "dependency-graph-builder": {
+      "cadence": "weekly",
+      "cron": "0 5 * * 1",
+      "layer": "L1",
+      "depends_on": [
+        "repo-scanner"
+      ],
+      "required_inputs": [
+        "portfolio-summary"
+      ],
+      "produces": "D:\\reports\\architecture\\dependency-analysis-{date}.md",
+      "id_prefix": "ESC"
+    },
+    "documentation-sync": {
+      "cadence": "condition",
+      "cron": "0 5 * * *",
+      "layer": "L1",
+      "depends_on": [
+        "repo-scanner"
+      ],
+      "required_inputs": [
+        "portfolio-summary"
+      ],
+      "produces": "D:\\reports\\daily\\documentation-sync-{date}.md",
+      "id_prefix": null,
+      "condition": "NO_CHANGE skip if no commits to main since last run"
+    },
+    "security-routine": {
+      "cadence": "daily",
+      "cron": "20 5 * * *",
+      "layer": "L1",
+      "depends_on": [
+        "repo-scanner"
+      ],
+      "required_inputs": [
+        "portfolio-summary"
+      ],
+      "produces": "D:\\reports\\security\\security-review-{date}.md",
+      "id_prefix": "NEW|F|ESC",
+      "freshness": "1/3"
+    },
+    "git-hygiene-routine": {
+      "cadence": "daily",
+      "cron": "30 5 * * *",
+      "layer": "L1",
+      "depends_on": [
+        "repo-scanner"
+      ],
+      "required_inputs": [],
+      "produces": "D:\\reports\\git-recovery\\git-hygiene-{date}.md",
+      "id_prefix": "GH"
+    },
+    "harness-propagation-routine": {
+      "cadence": "condition",
+      "cron": "45 5 * * *",
+      "layer": "L1",
+      "depends_on": [],
+      "required_inputs": [],
+      "produces": "D:\\reports\\harness\\harness-propagation-{date}.md",
+      "id_prefix": "HP",
+      "condition": "NO_CHANGE skip if CLAUDE.base.md/commands unchanged since last run"
+    },
+    "qa-routine": {
+      "cadence": "daily",
+      "cron": "0 6 * * *",
+      "layer": "L2",
+      "depends_on": [
+        "security-routine",
+        "dependency-graph-builder",
+        "documentation-sync"
+      ],
+      "required_inputs": [
+        "security-review"
+      ],
+      "produces": "D:\\reports\\qa\\qa-summary-{date}.md",
+      "id_prefix": "QA"
+    },
+    "devops-routine": {
+      "cadence": "daily",
+      "cron": "12 6 * * *",
+      "layer": "L2",
+      "depends_on": [
+        "security-routine",
+        "repo-scanner"
+      ],
+      "required_inputs": [
+        "security-review"
+      ],
+      "produces": "D:\\reports\\devops\\devops-summary-{date}.md",
+      "id_prefix": "DO",
+      "freshness": "1/3"
+    },
+    "cto-routine": {
+      "cadence": "daily",
+      "cron": "35 6 * * *",
+      "layer": "L2",
+      "depends_on": [
+        "security-routine",
+        "qa-routine",
+        "devops-routine",
+        "dependency-graph-builder"
+      ],
+      "required_inputs": [
+        "security-review",
+        "qa-summary"
+      ],
+      "produces": "D:\\reports\\architecture\\cto-review-{date}.md",
+      "id_prefix": "ESC"
+    },
+    "product-routine": {
+      "cadence": "weekly",
+      "cron": "50 6 * * 1",
+      "layer": "L2",
+      "depends_on": [
+        "cto-routine",
+        "qa-routine",
+        "security-routine"
+      ],
+      "required_inputs": [
+        "cto-review"
+      ],
+      "produces": "D:\\reports\\daily\\product-review-{date}.md",
+      "id_prefix": "PR"
+    },
+    "commercialstrategy-routine": {
+      "cadence": "weekly",
+      "cron": "0 7 * * 3",
+      "layer": "L2",
+      "depends_on": [
+        "product-routine",
+        "cto-routine"
+      ],
+      "required_inputs": [
+        "product-review"
+      ],
+      "produces": "D:\\reports\\daily\\commercial-review-{date}.md",
+      "id_prefix": "CS"
+    },
+    "release-changelog-routine": {
+      "cadence": "condition",
+      "cron": "20 7 * * *",
+      "layer": "L2",
+      "depends_on": [
+        "devops-routine"
+      ],
+      "required_inputs": [],
+      "produces": "D:\\reports\\daily\\release-readiness-{date}.md",
+      "id_prefix": "RC",
+      "condition": "NO_CHANGE skip unless merge to main since last run"
+    },
+    "secret-rotation-tracker": {
+      "cadence": "daily",
+      "cron": "30 7 * * *",
+      "layer": "L2",
+      "depends_on": [
+        "security-routine"
+      ],
+      "required_inputs": [
+        "security-review"
+      ],
+      "produces": "D:\\reports\\security\\secret-rotation-{date}.md",
+      "id_prefix": "SR",
+      "freshness": "1/3"
+    },
+    "finops-routine": {
+      "cadence": "weekly",
+      "cron": "0 7 * * 5",
+      "layer": "L2",
+      "depends_on": [
+        "devops-routine",
+        "repo-scanner"
+      ],
+      "required_inputs": [],
+      "produces": "D:\\reports\\finops\\finops-review-{date}.md",
+      "id_prefix": "FO"
+    },
+    "mvp-delivery-routine": {
+      "cadence": "weekly",
+      "cron": "30 6 * * 1",
+      "layer": "L2",
+      "depends_on": [
+        "product-routine"
+      ],
+      "required_inputs": [],
+      "produces": "D:\\reports\\evolution\\mvp-progress-{date}.md",
+      "id_prefix": "MV"
+    },
+    "ceo-routine": {
+      "cadence": "daily",
+      "cron": "15 8 * * *",
+      "layer": "L3",
+      "depends_on": [
+        "cto-routine",
+        "security-routine",
+        "devops-routine",
+        "qa-routine"
+      ],
+      "required_inputs": [
+        "security-review"
+      ],
+      "produces": "D:\\reports\\daily\\ceo-summary-{date}.md",
+      "id_prefix": "ESC-CEO",
+      "quiet_day_aware": true
+    },
+    "daily-planner-routine": {
+      "cadence": "daily",
+      "cron": "30 8 * * *",
+      "layer": "L3",
+      "depends_on": [
+        "ceo-routine"
+      ],
+      "required_inputs": [
+        "master-operating-plan(N-1)"
+      ],
+      "produces": "D:\\reports\\daily\\daily-plan-{date}.md",
+      "id_prefix": "DP",
+      "note": "consumes PRIOR-NIGHT master-operating-plan; see circular_dep_adr"
+    },
+    "approval-governance-routine": {
+      "cadence": "daily",
+      "cron": "45 8 * * *",
+      "layer": "L3",
+      "depends_on": [
+        "ceo-routine",
+        "daily-planner-routine"
+      ],
+      "required_inputs": [
+        "ceo-summary"
+      ],
+      "produces": "D:\\reports\\approvals\\approval-summary-{date}.md",
+      "id_prefix": "AG",
+      "also_produces": "D:\\state\\execution-queue\\pending\\*.json (safelist-eligible actions for r11)",
+      "quiet_day_aware": true
+    },
+    "execution-safety-routine": {
+      "cadence": "daily",
+      "cron": "0 9 * * *",
+      "layer": "L3",
+      "depends_on": [
+        "ceo-routine",
+        "approval-governance-routine",
+        "security-routine"
+      ],
+      "required_inputs": [
+        "security-review",
+        "approval-summary"
+      ],
+      "produces": "D:\\reports\\daily\\execution-safety-{date}.md",
+      "id_prefix": null
+    },
+    "engineering-routine": {
+      "cadence": "daily",
+      "cron": "15 9 * * *",
+      "layer": "L6",
+      "depends_on": [
+        "execution-safety-routine",
+        "daily-planner-routine"
+      ],
+      "required_inputs": [
+        "execution-safety",
+        "daily-plan"
+      ],
+      "produces": "D:\\reports\\daily\\engineering-{date}.md",
+      "id_prefix": "ENG",
+      "note": "NO_CHANGE skip on no-commit days"
+    },
+    "r11-safe-resolver": {
+      "cadence": "daily",
+      "cron": "30 9 * * *",
+      "layer": "L6",
+      "depends_on": [
+        "execution-safety-routine",
+        "approval-governance-routine"
+      ],
+      "required_inputs": [
+        "execution-safety"
+      ],
+      "produces": "D:\\reports\\r11\\r11-safe-resolver-{date}.md",
+      "id_prefix": "R11",
+      "gate": "live action requires same-day execution-safety = non-HALT AND non-empty execution-queue; else SKIP"
+    },
+    "failure-analysis-routine": {
+      "cadence": "daily",
+      "cron": "0 18 * * *",
+      "layer": "L4",
+      "depends_on": [],
+      "required_inputs": [
+        "eod-summary(N-1)"
+      ],
+      "produces": "D:\\reports\\evolution\\failure-analysis-{date}.md",
+      "id_prefix": "FA",
+      "note": "MUST run before memory-consolidation"
+    },
+    "end-of-day-distillation-routine": {
+      "cadence": "daily",
+      "cron": "30 18 * * *",
+      "layer": "L5",
+      "depends_on": [
+        "ceo-routine"
+      ],
+      "required_inputs": [
+        "ceo-summary"
+      ],
+      "produces": "D:\\reports\\daily\\eod-summary-{date}.md",
+      "id_prefix": "EOD"
+    },
+    "memory-consolidation-routine": {
+      "cadence": "daily",
+      "cron": "0 19 * * *",
+      "layer": "L5",
+      "depends_on": [
+        "failure-analysis-routine",
+        "end-of-day-distillation-routine"
+      ],
+      "required_inputs": [
+        "eod-summary"
+      ],
+      "produces": "D:\\reports\\daily\\memory-consolidation-{date}.md",
+      "id_prefix": "MC"
+    },
+    "knowledge-ingestion-routine": {
+      "cadence": "weekly",
+      "cron": "0 8 * * 0",
+      "layer": "L5",
+      "depends_on": [],
+      "required_inputs": [],
+      "produces": "D:\\reports\\evolution\\knowledge-ingestion-{date}.md",
+      "id_prefix": "KI"
+    },
+    "orchestration-routine": {
+      "cadence": "daily",
+      "cron": "30 23 * * *",
+      "layer": "L3",
+      "depends_on": [
+        "ceo-routine",
+        "execution-safety-routine",
+        "end-of-day-distillation-routine",
+        "memory-consolidation-routine"
+      ],
+      "required_inputs": [
+        "ceo-summary"
+      ],
+      "produces": "D:\\reports\\daily\\master-operating-plan-{date}.md",
+      "id_prefix": null,
+      "note": "night-of terminal synthesis; seeds next-morning daily-planner"
+    },
+    "autonomous-improvement-routine": {
+      "cadence": "fortnightly",
+      "cron": "0 9 * * 0",
+      "layer": "L4",
+      "depends_on": [
+        "capability-benchmarking-routine"
+      ],
+      "required_inputs": [],
+      "produces": "D:\\reports\\evolution\\autonomous-improvement-{date}.md",
+      "id_prefix": "AI",
+      "note": "fortnightly Sun (week B); chain: AI 09:00 -> frontier 10:00 -> prompt-evolution 11:00"
+    },
+    "frontier-architecture-routine": {
+      "cadence": "fortnightly",
+      "cron": "0 10 * * 0",
+      "layer": "L4",
+      "depends_on": [
+        "deep-research-routine"
+      ],
+      "required_inputs": [],
+      "produces": "D:\\reports\\evolution\\frontier-architecture-{date}.md",
+      "id_prefix": "FRA"
+    },
+    "prompt-evolution-routine": {
+      "cadence": "weekly",
+      "cron": "0 11 * * 0",
+      "layer": "L4",
+      "depends_on": [
+        "frontier-architecture-routine",
+        "autonomous-improvement-routine",
+        "failure-analysis-routine"
+      ],
+      "required_inputs": [],
+      "produces": "D:\\reports\\evolution\\prompt-evolution-{date}.md",
+      "id_prefix": "PE",
+      "note": "runs AFTER the Sun evolution chain"
+    },
+    "capability-benchmarking-routine": {
+      "cadence": "fortnightly",
+      "cron": "0 21 * * 1",
+      "layer": "L4",
+      "depends_on": [],
+      "required_inputs": [],
+      "produces": "D:\\reports\\evolution\\capability-benchmark-{date}.md",
+      "id_prefix": "CB"
+    },
+    "innovation-backlog-routine": {
+      "cadence": "fortnightly",
+      "cron": "0 8 * * 1",
+      "layer": "L5",
+      "depends_on": [
+        "competitive-intelligence-routine",
+        "deep-research-routine",
+        "frontier-architecture-routine",
+        "failure-analysis-routine"
+      ],
+      "required_inputs": [],
+      "produces": "D:\\reports\\evolution\\innovation-backlog-{date}.md",
+      "id_prefix": "IB"
+    },
+    "tooling--mcp-discovery-routine": {
+      "cadence": "weekly",
+      "cron": "0 21 * * 2",
+      "layer": "L4",
+      "depends_on": [
+        "frontier-architecture-routine"
+      ],
+      "required_inputs": [],
+      "produces": "D:\\reports\\evolution\\tooling-mcp-discovery-{date}.md",
+      "id_prefix": "TL",
+      "paused_until": "2026-07-31",
+      "note": "peak-period trim 2026-07-03"
+    },
+    "fleet-health-routine": {
+      "cadence": "daily",
+      "cron": "45 9 * * *",
+      "layer": "L5",
+      "depends_on": [],
+      "required_inputs": [
+        "fleet-exit-log.jsonl",
+        "fleet-expectations.json"
+      ],
+      "produces": "D:\\reports\\daily\\fleet-health-{date}.md",
+      "id_prefix": null,
+      "note": "runs LAST in the morning window; observability beacon, read-only over exit log + validation log"
+    }
   }
 }

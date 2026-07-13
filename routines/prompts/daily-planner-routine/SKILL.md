@@ -57,6 +57,17 @@ findings; cite them inline. Where a same-date file is absent, use the most
 recent and note its age in days — EXCEPT the master-operating-plan, which you
 deliberately read from the prior night (see ADR above).
 
+> **§1 pre-check scope (do not over-SKIP):** the PRODUCER_PRECHECK §1 hard
+> pre-check applies ONLY to this routine's `required_inputs` in
+> `routine-schedule.json` — for daily-planner that is the **PRIOR-NIGHT
+> master-operating-plan alone**. Every other input below is SOFT: if its
+> same-day file is absent, fall back to the most-recent dated file under the
+> Input Freshness Gate (DEGRADE/ABORT tiering) and keep planning. Do NOT emit
+> `SKIP: not produced today` because a soft input (e.g. cto-review) is absent
+> — this routine fires once per day, there is no later window to pick it up,
+> and a SKIP here costs the whole day's plan (this deadlocked 12 days,
+> 2026-07-01→13).
+
 - `D:\reports\daily\ceo-summary-{date}.md`
 - `D:\reports\architecture\cto-review-{date}.md` (+ its `## Machine Handoff`)
 - `D:\reports\daily\product-review-{date}.md`
