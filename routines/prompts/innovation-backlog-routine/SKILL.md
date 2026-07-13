@@ -53,6 +53,11 @@ rows whose `Owner` is `innovation-backlog` are pre-routed to you):
   `## Machine Handoff` `FRA-NN` — architecture patterns)
 - `D:\reports\daily\product-review-{date}.md` (+ `PR-NN` handoff)
 - `D:\reports\daily\commercial-review-{date}.md` (+ `CS-NN` handoff)
+- Most-recent `D:\reports\evolution\mvp-progress-*.md` (+ `## Machine Handoff`
+  `MV-NN` — WEEKLY, Sundays). Use it to **reject "not-in-MVP" ideas** against
+  fresh scope state: an idea already covered by a ratified scope item is not a
+  backlog candidate, and a `MV-NN` scope-creep flag (item proposed INTO the
+  cutline that should be post-MVP) is itself a backlog item, not MVP work.
 - Most-recent `D:\reports\evolution\failure-analysis-*.md` (+ `FA-NN` handoff
   — recurring failures often imply a capability gap to backlog)
 - Prior `D:\reports\evolution\innovation-backlog-*.md` (supersede; lead with a

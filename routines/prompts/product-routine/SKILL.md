@@ -36,6 +36,13 @@ report flags a check is needed.
    - `/reports/devops/devops-summary-{date}.md`
    - `/reports/daily/commercial-review-{date}.md`
    - `/reports/security/*-{date}.md`
+   - **most-recent `/reports/evolution/mvp-progress-*.md`** (WEEKLY, Sundays;
+     read latest by date regardless of `{date}`). This is the **canonical MVP
+     scope-of-record baseline** for the "MVP gaps" objective — read its
+     `## Machine Handoff` `MV-NN` table and per-repo burndown BEFORE deriving
+     MVP gaps from roadmap docs. When it flags a ratification-latency gap
+     (ratified `<repo>.json` behind the pending `.proposed.json`), the ratified
+     % is the number to report; do not grade off the shadow/proposed %.
 3. **Stale-input fallback:** if a needed input has no {date} version, fall back
    to the most recent version within a 7-day window, and explicitly flag in the
    Uncertainty section that it is N days old and which conclusions rest on it.

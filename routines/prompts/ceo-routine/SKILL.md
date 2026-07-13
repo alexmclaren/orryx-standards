@@ -59,6 +59,13 @@ Read all reports dated {date} from:
   same-date glob above will miss it 13 of every 14 days. Fold its net
   maturity score, trend, and `TRIPWIRE:` line into the CEO summary; state its
   age in days in §Caveats.)
+- **most-recent `/reports/evolution/mvp-progress-*.md`** (WEEKLY, Sundays:
+  read the latest file by date even when no `-{date}` match exists — the
+  same-date glob above will miss it 6 of every 7 days. Fold its **weighted
+  burndown % across customer-bearing repos** in as the single-number MVP
+  health signal, and its `MV-NN` handoff into the escalation view; when it
+  reports a ratified-vs-proposed gap, cite the **ratified** %. State its age
+  in days in §Caveats.)
 - `/state/dependency-graph.json`
 - `/state/ceo-escalations.json` (durable CEO ledger — see Context Maintenance)
 - `/state/escalations/open/*.md` (upstream escalation stubs — see ESC ID Mapping)

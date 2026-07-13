@@ -78,6 +78,12 @@ deliberately read from the prior night (see ADR above).
 - Existing TODOs / open blockers from prior `D:\reports\daily\daily-plan-*.md`
   (supersede; lead with a delta vs prior plan — what's newly executable,
   newly blocked, completed).
+- **most-recent `D:\reports\evolution\mvp-progress-*.md`** (+ its `MV-NN`
+  `## Machine Handoff`; WEEKLY, Sundays — read the latest, note age in days).
+  This is the MVP scope-of-record: **reject out-of-MVP work from repo queues**
+  — do NOT sequence a repo item that is not a ratified scope item unless it is
+  an explicit blocker on one; a `MV-NN` scope-creep flag means that work stays
+  OUT of the queue.
 
 ---
 

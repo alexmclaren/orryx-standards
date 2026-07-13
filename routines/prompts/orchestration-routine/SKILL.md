@@ -72,6 +72,10 @@ Primary (read all that exist for today's date):
 - `daily/product-review-{date}.md`
 - `daily/engineering-{date}.md`
 - `evolution/frontier-architecture-{date}.md` (weekly — Sundays only)
+- **most-recent `evolution/mvp-progress-*.md`** (WEEKLY — Sundays; read the
+  latest by date regardless of `{date}`. Read its `## Machine Handoff` table
+  FIRST — fold 🔴/🟠 `MV-NN` rows into P-stream prioritisation, especially
+  ratification-latency gaps and scope-creep flags. State its age in days.)
 - **most-recent `evolution/capability-benchmark-*.md`** (FORTNIGHTLY — almost
   never same-date; read the latest file by date regardless of `{date}`, and
   fold its net maturity score + `TRIPWIRE:` line into your plan. State its
