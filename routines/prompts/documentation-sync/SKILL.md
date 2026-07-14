@@ -17,6 +17,8 @@ Scan these repos under `D:\`:
 - orryx-brain, orryx-control-plane, orryx-core, orryx-engineering,
   orryx-flow, orryx-governance, orryx-knowledge, orryx-mcp-gateway
 - pillarworks-build-mvp, Clinical.Trials
+- Pillarworks-Enterprise-Website (customer-facing docs — see the
+  "Customer-facing docs freshness" section; READ-ONLY for this repo)
 
 Also surface these orphan directories: Orryx/, orryx-audit/,
 orryx-archive-offrepo-2026-05/.
@@ -162,6 +164,66 @@ Detect:
 - Roadmap sections with past-tense dates still framed as future work
 - Docs that assert migration/deployment completion contradicted by
   git branch state or the repo-health summary (flag; do not resolve)
+
+## Customer-facing docs freshness (pillarworks.io/docs)
+
+Added 2026-07-14. The public documentation at https://pillarworks.io/docs
+is customer-facing product copy and MUST be audited every run alongside
+internal docs. Its single source of truth is
+`Pillarworks-Enterprise-Website/src/pages/DocsPage.tsx` (the inline
+`DOCS_DATA` array — 8 categories, ~31 articles). It deploys to
+S3+CloudFront automatically on every push to `main`, so origin/main IS
+the live site.
+
+**Read-only rule for this repo (hard constraint):** concurrent processes
+switch branches in `D:\Pillarworks-Enterprise-Website` mid-session.
+NEVER edit its working tree, never rely on the checked-out branch. Read
+content via `git show origin/main:src/pages/DocsPage.tsx` (and likewise
+for the truth anchors below) after a `git fetch origin main`. If the
+fetch fails (offline), fall back to local refs and mark claims "as of
+local origin/main".
+
+**NO_CHANGE gate:** if neither `src/pages/DocsPage.tsx` nor any truth
+anchor below changed on origin/main since the last run's recorded audit
+commit (record the audited commit SHA in the report each run), emit one
+line "customer docs: NO_CHANGE since <sha>" and skip this section.
+
+**Truth anchors — cross-check every docs claim against these, all read
+from origin/main of the same repo unless stated:**
+1. `src/pages/PricingPage.tsx` — canonical pricing ladder (tier NAMES,
+   prices, project limits, per-tier features). Docs tier tables must
+   match it exactly.
+2. `src/pages/app/UploadPage.tsx` — accepted upload file types and
+   `maxSizeMB`. Docs must not name any format or size not present here
+   (historical trap: docs claimed DWG/DXF + 500MB; reality was
+   PDF/images + 100MB).
+3. `src/lib/api/*.ts` — the only export/feature endpoints that exist.
+   A docs claim of an export format (CSV, PDF report, API access) with
+   no corresponding client function is a finding.
+4. `src/pages/app/ExtractionReviewPage.tsx` + `src/lib/api/types.ts` —
+   confidence-bucket thresholds and the needs-review threshold (0.85 as
+   of 2026-07). Docs percentage bands must match.
+5. `src/pages/SecurityPage.tsx` — the ratified honest security wording
+   (post commit 97dbd30 "remove false compliance claims"). Docs
+   security/trust articles must be no STRONGER than this page.
+6. `pillarworks-build-mvp` backend (read-only, `git show origin/main:`)
+   when a claim cannot be settled from the frontend alone.
+
+**Claims-policy gate (feedback_pillarworks_claims_policy — apply to
+every article):** flag ANY of the following unless verified in-repo this
+run: accuracy percentages, "audit-grade", CAD/DWG/DXF support,
+compliance certifications (SOC 2 / ISO), penetration-testing claims,
+data-residency guarantees (infra is us-east-1 today; residency is
+enterprise-agreement-scoped only), "trained on <X> data" claims, and
+any feature the docs describe (keyboard shortcut, button, tab, setting)
+that does not exist in `src/pages/app/**`.
+
+**Output:** a "Customer docs (pillarworks.io/docs)" subsection in the
+report listing each mismatch as article-id → claim → truth-anchor
+citation, plus a `DOC-NN` Machine Handoff row per finding. This routine
+NEVER edits DocsPage.tsx (it is product source code in a repo other
+processes own) — fixes route to engineering-routine or a human via the
+handoff.
 
 ## Actions
 
