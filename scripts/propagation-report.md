@@ -19,16 +19,16 @@
 | orryx-website | skipped (already pointed) | add:[] conflict:[loop.md,plan.md,verify.md,review.md] |  |
 | orryx-repair-intelligence | skipped (already pointed) | add:[] conflict:[loop.md,plan.md,verify.md,review.md] |  |
 | orryx-standards | skipped (already pointed) | source-repo (commands/ is canonical; no copy) |  |
-| pillarworks-build-mvp | skipped (already pointed) | add:[] conflict:[loop.md,plan.md,verify.md,review.md] |  |
+| pillarworks-build-mvp | updated (header prepended) | add:[] conflict:[loop.md,plan.md,verify.md,review.md] |  |
 | pillarworks-demo | skipped (already pointed) | add:[] conflict:[loop.md,plan.md,verify.md,review.md] |  |
-| Pillarworks-Enterprise-Website | skipped (already pointed) | add:[] conflict:[loop.md,plan.md,verify.md,review.md] |  |
+| Pillarworks-Enterprise-Website | created (thin pointer) | add:[] conflict:[loop.md,plan.md,verify.md,review.md] |  |
 | Clinical.Trials | skipped (already pointed) | add:[] conflict:[loop.md,plan.md,verify.md,review.md] |  |
 | brisbane-gynae-fertility | skipped (already pointed) | add:[] conflict:[loop.md,plan.md,verify.md,review.md] |  |
 | midnight-raid-analyser | skipped (already pointed) | add:[] conflict:[loop.md,plan.md,verify.md,review.md] |  |
 | cavalier-rescue | skipped (already pointed) | add:[] conflict:[loop.md,plan.md,verify.md,review.md] |  |
 | property-maintenance-os | skipped (already pointed) | add:[] conflict:[loop.md,plan.md,verify.md,review.md] |  |
 
-**Summary:** created=0  updated=0  skipped=21  total=21
+**Summary:** created=1  updated=1  skipped=19  total=21
 
 > DRY-RUN — no files were modified. Re-run with `-Apply` to write changes.
 
