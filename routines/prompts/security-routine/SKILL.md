@@ -97,6 +97,20 @@ blast radius).
 - "Live" in the report means: plaintext value + a real, named target resource.
   Actual key validity / cloud-side confirmation requires operator credentials and is
   out of routine scope — state this rather than asserting validity.
+- **RF-13b — rotation-ledger pre-assertion gate (mandatory, mechanical).** Before
+  printing ANY "UNROTATED" / "NOT ROTATED" / "top operator priority — rotate" line
+  for a named secret, read `D:\state\secret-rotation-ledger.json` (the canonical
+  rotation record, live-cloud-verified by secret-rotation-tracker). If that secret's
+  entry is `status: "rotated"` with `verified_method: "live-cloud"`, you MUST NOT
+  assert it as unrotated: report it as **"rotated cloud-side (ledger SR-NN, attested
+  {date}); residual = git-history presence only"** and exclude it from the
+  halt-critical staleness clock. Git-history presence is NOT evidence a credential
+  is live — the ledger outranks history-grep on rotation state. If the ledger entry
+  is `outstanding`/absent, assert unrotated as normal and cite the ledger status.
+  This gate requires no cloud call and does not relax the no-cloud-calls constraint.
+  (Added 2026-07-16; ends the NEW-22 phantom-CRITICAL class — 5 consecutive weeks of
+  downstream containment of a source-minted false positive. Ref: capability-benchmark
+  CB-17, memory MC-04/RF-13b.)
 
 ## Constraints
 
