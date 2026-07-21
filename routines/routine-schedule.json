@@ -488,6 +488,24 @@
       "produces": "D:\\reports\\daily\\fleet-health-{date}.md",
       "id_prefix": null,
       "note": "runs LAST in the morning window; observability beacon, read-only over exit log + validation log"
+    },
+    "briefing-writer-routine": {
+      "cadence": "daily",
+      "cron": "0 10 * * *",
+      "layer": "L3",
+      "depends_on": [
+        "ceo-routine",
+        "daily-planner-routine",
+        "fleet-health-routine"
+      ],
+      "required_inputs": [
+        "ceo-summary",
+        "daily-plan",
+        "fleet-health"
+      ],
+      "produces": "D:\\reports\\evolution\\command-briefing-{date}.md",
+      "id_prefix": "BRF",
+      "note": "AI Chief of Staff — model at emission time; dashboard collector validates mechanically at render time"
     }
   }
 }
