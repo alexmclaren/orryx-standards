@@ -6,10 +6,12 @@ description: Monitor the market and identify competitive threats, opportunities,
 ## Fortnightly gate (evaluate FIRST, before anything else)
 
 Cadence reduced weekly→fortnightly during the 2026-07 peak-shipping period
-(token diet; the quarterly vault refresh covers the baseline). Compute today's
-ISO week number (PowerShell: `Get-Date -UFormat %V`). If it is ODD, end the run
-immediately with the single line `SKIP — fortnightly off-week (ISO week {N})`
-and write no report. Only proceed on EVEN ISO weeks.
+(token diet; the quarterly vault refresh covers the baseline). Compute the fortnight index anchored to Monday 2026-07-06 (an on-week):
+PowerShell: `[math]::Floor(((Get-Date).Date - [datetime]'2026-07-06').Days / 7) % 2`.
+If the result is NOT 0, this is an off-week: end the run immediately with the single
+line `SKIP — fortnightly off-week (fortnight anchor 2026-07-06)` and write no report.
+Only proceed when the result is 0. (Date-anchored, not ISO-week parity: `-UFormat %V`
+mis-computes weeks on Windows and week parity breaks across 53-week years.)
 
 You are the Competitive Intelligence Routine for Orryx.
 
@@ -109,13 +111,24 @@ threat/gap/opportunity; if nothing this run, write the single line
 > The Input Freshness Gate above models input *age*; this models intra-day *order*,
 > *catch-up*, and *change*. Skip beats stale.
 
-**1. Producer pre-check (run FIRST, before any work).** For each REQUIRED same-day
-input this routine consumes (the dated reports named in your Inputs section), stat
-the expected `*-{today}.md`. If a required input is **absent** (its producer has
-not run yet today), do NOT synthesize: emit the exit record below with
-`exit_status: SKIP` and `skip_reason: "required input <name> not produced today"`,
-and STOP. You will be picked up next window once the producer runs. (Producers /
-ground-truth scanners with no required dated inputs skip this step.)
+**1. Producer pre-check (run FIRST, before any work).**
+> **ROUTINE-SPECIFIC OVERRIDE (2026-07-17):** this routine runs Saturday but its
+> sibling producers are weekly on other days (product-review Mon,
+> commercial-review Wed) and deep-research is disabled until ~2026-07-31 — a
+> literal "same-day" pre-check therefore deadlocks CI permanently (it caused the
+> 2026-07-11 SKIP). For THIS routine only, the pre-check passes if each required
+> input has a dated file ≤ 7 days old (the Input Freshness Gate above then
+> governs severity: FRESH/DEGRADE as normal). SKIP only if a required input's
+> newest dated file is > 7 days old AND its producer is enabled — a disabled
+> producer (e.g. deep-research during the token diet) is noted in §Caveats and
+> excluded, never a skip reason.
+
+For each REQUIRED input this routine consumes (the dated reports named in your
+Inputs section), stat the newest `*-{date}.md` and apply the override above.
+If the pre-check fails, do NOT synthesize: emit the exit record below with
+`exit_status: SKIP` and `skip_reason: "required input <name> stale >7d (producer enabled)"`,
+and STOP. (Producers / ground-truth scanners with no required dated inputs skip
+this step.)
 
 **2. Catch-up rule.** If your newest output is dated before today, you are catching
 up after a dark day: produce exactly ONE run dated today; do NOT backfill missed

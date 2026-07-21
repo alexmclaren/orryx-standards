@@ -134,7 +134,10 @@ Do NOT assess pricing, legal flows, or release approval — those belong to `pro
    - In-scope work NOT being sequenced → flag as gap (Severity by burndown delay).
 4. For each repo lacking a ratified scope-of-record, generate or UPSERT `D:\state\mvp-scope\<repo>.proposed.json` per the schema in `D:\state\mvp-scope\README.md`. Mark every emitted item `[Recommendation]` in the report.
 5. Compute portfolio burndown: `% complete = shipped / (shipped + in-flight + blocked + not-started)` per repo + weighted across customer-bearing tier (weight = revenue-tier first, then maturity).
-6. Emit the dated report + Machine Handoff per the format below.
+6. **Ratification-latency check (added 2026-07-17 — closes the report→repo handover gap).** Two flags, both report-only:
+   (a) For each `D:\state\mvp-scope\*.proposed.json`, report its age since `proposed_at`; ≥14 days un-ratified → 🟠 escalate as RATIFICATION-STALLED with the one-line human action (ratify or reject).
+   (b) Read the newest `D:\reports\evolution\innovation-backlog-*.md` Machine Handoff; for each IB item at horizon `next`, grep the scope files (`.json` + `.proposed.json`) for its ID — if absent from BOTH, flag as UNLANDED-BACKLOG-ITEM (🟡; 🟠 if it has sat at `next` across ≥2 backlog runs). Never auto-write these into scope — flag only; landing is a `.proposed` delta authored by a human or an explicitly tasked session.
+7. Emit the dated report + Machine Handoff per the format below.
 
 ## Constraints
 
