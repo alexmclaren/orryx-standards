@@ -139,6 +139,25 @@ not run yet today), do NOT synthesize: emit the exit record below with
 and STOP. You will be picked up next window once the producer runs. (Producers /
 ground-truth scanners with no required dated inputs skip this step.)
 
+**1a. Unconditional pre-SKIP re-stat (PE-22 / AI-46, added 2026-07-21).** Immediately
+before committing ANY SKIP that asserts a required input is "not produced today,"
+re-stat the live path — glob the real expected file (e.g.
+`D:\reports\repo-health\portfolio-summary-{today}.md`), read its on-disk mtime, and
+RECORD that glob + mtime in `skip_reason`. If the file exists, do NOT
+SKIP-as-blackout: consume it, or emit `SKIP: PRODUCER_NOT_YET_FIRED (<producer>)`
+if it is expected later today. A `run_id` of `T00:00:00Z` (placeholder midnight
+fire) is itself a mandatory re-check trigger — never SKIP-as-blackout off a
+placeholder fire plus a previous-cycle baseline. (Root cause of the 2026-07-12
+four-consumer false-blackout.)
+
+**1b. Re-fire on landing (RF-10b / HA-057, added 2026-07-21).** If this run SKIPs
+on `PRODUCER_NOT_YET_FIRED`, re-check for the producer's output at the next wake
+window the same day; when it has landed, run fully and append an exit row noting
+it supersedes the earlier SKIP row. Detection alone is not done — the day's work
+must still run. Do NOT re-time windows. (Proven pattern: memory-consolidation
+re-fired 2026-07-17T02:12Z after its producer landed, superseding its own earlier
+SKIP row.)
+
 **2. Catch-up rule.** If your newest output is dated before today, you are catching
 up after a dark day: produce exactly ONE run dated today; do NOT backfill missed
 dates; lead the report with `catch_up: true, missed_days: N`.
@@ -245,6 +264,30 @@ Immediately escalate:
 - significant roadmap drift
 - authoritative documentation that contradicts verified disk/branch/repo state (doc/reality divergence is a correctness hazard for autonomous routines that act on those docs)
 
+## SKU-Launch Gate (standing BLOCKING rule — RF-16 / FA-27 / HA-056, added 2026-07-21)
+
+Never declare, announce, or report a SKU, price, or purchase path as "launched",
+"live", or "revenue-ready" — in the CEO summary, the board HTML, or the escalation
+ledger — on narrative status alone. A launch declaration requires cited mechanical
+evidence of ALL THREE preconditions:
+
+1. **End-to-end LIVE test charge verified the entitlement grant** — webhook
+   received AND entitlement row created (pay-without-grant is the failure this
+   gate exists for).
+2. **Live price objects match the marketed pricing** (no test price IDs in the
+   prod secret; live catalog amounts correct).
+3. **Payouts enabled** on the payment account (no past-due verification holding
+   payouts).
+
+A preflight that merely DETECTS blockers is advisory; this gate is BLOCKING: any
+unresolved precondition ⇒ report the SKU as **NOT LAUNCHED — blocked**, escalate
+it (ESC-CEO-NNN), and — per ceo-summary-2026-07-17 §8 — recommend disabling the
+purchase path if the webhook cannot land promptly. (Context: Project Pass A$199
+shipped purchasable in prod (#326) against 4 unresolved Stripe preflight blockers
+incl. no live webhook; code had a required deploy gate, the purchasable SKU had
+none.) Once the stripe-go-live-gate config is pushed (HA-030), cite its mechanical
+check output as the evidence for all three preconditions.
+
 ## Escalation Lifecycle
 
 States: `open` → `acknowledged` → `in-progress` → `resolved` | `accepted-risk` | `superseded`
@@ -308,6 +351,19 @@ A `Caveats` section is REQUIRED. It must enumerate:
 ## Report Location
 
 `/reports/daily/ceo-summary-{date}.md`
+
+## Board Report on G: (standing directive, added 2026-07-16)
+
+Every FULL run (not SKIP runs) ALSO writes a board-readable **HTML** report to:
+`G:\Shared drives\ORRYX — Board & Corporate\02 Board Meetings\{date}\ORX-BRD-{date} — Portfolio Governance Report.html`
+
+Rules:
+- Easy-to-digest for a board audience: exec summary, KPI strip, top escalations table, ventures snapshot, **"Decisions & information requested"** section (explicitly ask the founder/board for any decisions, missing inputs, or sign-offs the fleet needs), recommendations. Self-contained HTML, inline CSS, no external assets.
+- Follow ORX-GOV-002 naming; mark **DRAFT — AI-GENERATED** per governance rule 6.
+- **NEVER include secret values, prefixes, needles, hostnames-with-credentials, or key IDs** — finding IDs (NEW-NN / ESC-CEO-NNN) only. G: is the company record; the no-secrets rule is absolute.
+- Supersede: if a same-date report exists, overwrite it (Drive versions internally); never delete prior dates — they are the board record.
+- Note in the HTML footer which report it supersedes and where full machine detail lives (D:\reports\ + ledger).
+- First report in the series: ORX-BRD-2026-07-16.
 
 ## Routine Compliance Section (required at end of every report)
 

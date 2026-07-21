@@ -98,6 +98,27 @@ not run yet today), do NOT synthesize: emit the exit record below with
 and STOP. You will be picked up next window once the producer runs. (Producers /
 ground-truth scanners with no required dated inputs skip this step.)
 
+**1a. Unconditional pre-SKIP re-stat (PE-22 / AI-46, added 2026-07-21).** Immediately
+before committing ANY SKIP that asserts a required input is "not produced today,"
+re-stat the live path — glob the real expected file (e.g.
+`D:\reports\repo-health\*-{today}.md`, `D:\reports\daily\ceo-summary-{today}.md`),
+read its on-disk mtime, and RECORD that glob + mtime in `skip_reason`. If the file
+exists, do NOT SKIP-as-blackout: consume it, or emit
+`SKIP: PRODUCER_NOT_YET_FIRED (<producer>)` if it is expected later today. A
+`run_id` of `T00:00:00Z` (placeholder midnight fire) is itself a mandatory
+re-check trigger — never SKIP-as-blackout off a placeholder fire plus a
+previous-cycle baseline. (Root cause of the 2026-07-12 four-consumer
+false-blackout.)
+
+**1b. Re-fire on landing (RF-10b / HA-057, added 2026-07-21).** If this run SKIPs
+on `PRODUCER_NOT_YET_FIRED`, re-check for the producer's output at the next wake
+window the same day; when it has landed, run fully and append an exit row noting
+it supersedes the earlier SKIP row. Detection alone is not done — the day's work
+must still run. Do NOT re-time windows. (This exact race SKIPped
+engineering-2026-07-17 at 02:39Z; ceo-17 landed 02:47Z and the day's work never
+ran. Proven pattern: memory-consolidation re-fired 2026-07-17T02:12Z after its
+producer landed, superseding its own earlier SKIP row.)
+
 **2. Catch-up rule.** If your newest output is dated before today, you are catching
 up after a dark day: produce exactly ONE run dated today; do NOT backfill missed
 dates; lead the report with `catch_up: true, missed_days: N`.

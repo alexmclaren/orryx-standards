@@ -61,6 +61,20 @@ For every input report you consume, compute `input_age_days` = today − the inp
 
 Ledger discipline: while inputs are ABORT-stale, the Auto-close rule (2 non-reproducing runs → resolved) and Stuck rule (>5 runs → raise severity) are SUSPENDED — note the suspension in §Caveats. Do not mutate a `FA-NN` entry's `Cycles` field under ABORT (do not advance the cycle count for a failure you could not re-observe because its source report is stale). The capability-benchmark cross-check is fortnightly: if the newest benchmark is >16 days old, treat its rows as unverified context, not as a fresh systemic signal.
 
+## Window-Position & Adjudication Pre-check
+
+- Derive your scheduling-window position from the spine's landing times in
+  `D:\reports\evolution\fleet-exit-log.jsonl`, NOT the wall clock, before classifying
+  this run — or any routine's run — as early/late/missed. Full analysis requires a
+  completed same-day spine regardless of clock time; if the spine has not landed yet,
+  this is an early fire (SHORT/SKIP per the Producer Pre-check), not a fleet failure.
+  (Fired 09:56 on 2026-07-15 and forced a SHORT report; 13:05 on 2026-07-17 was
+  harmless only because the spine had just completed.)
+- PENDING adjudication: when an item awaits an adjudication event that post-dates this
+  run (e.g. a scheduled health-check at ~04:05Z), record it as PENDING with the exact
+  expected timestamp — never as closed, and never re-escalated on subsequent runs while
+  its expected timestamp has not yet passed.
+
 Tasks:
 1. Review all failed or incomplete work.
 2. Identify root causes.

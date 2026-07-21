@@ -90,6 +90,12 @@ Always verify against:
 
 ---
 
+### 0.5 THE DECISION HIERARCHY (PRODUCT DESIGN STANDARD)
+
+Every human interaction shipped in any Orryx venture must sit at the **lowest achievable level** of the Decision Hierarchy (L0 AI-automatic → L5 fully manual). See [ADR-UX-001](decisions/ADR-UX-001-decision-hierarchy.md) for the full standard: level definitions, the L2/L3 recommendation-card contract, confidence/memory rules, and review gates. "Add a form/wizard/settings page" defaults to **infer, remember, or recommend** instead.
+
+---
+
 # 1. EXECUTION FRAMEWORK
 
 ---

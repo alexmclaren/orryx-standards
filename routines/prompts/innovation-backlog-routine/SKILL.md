@@ -6,10 +6,12 @@ description: Convert research, failures, market signals, architecture ideas, and
 ## Fortnightly gate (evaluate FIRST, before anything else)
 
 Canonical cadence is FORTNIGHTLY (routine-schedule.json); the cron fires weekly only
-because 5-field cron cannot express alternating weeks. Compute today's ISO week number
-(PowerShell: `Get-Date -UFormat %V`). If it is ODD, this is an off-week: end the run
-immediately with the single line `SKIP — fortnightly off-week (ISO week {N})` and write
-no report. Only proceed on EVEN ISO weeks.
+because 5-field cron cannot express alternating weeks. Compute the fortnight index anchored to Monday 2026-07-06 (an on-week):
+PowerShell: `[math]::Floor(((Get-Date).Date - [datetime]'2026-07-06').Days / 7) % 2`.
+If the result is NOT 0, this is an off-week: end the run immediately with the single
+line `SKIP — fortnightly off-week (fortnight anchor 2026-07-06)` and write no report.
+Only proceed when the result is 0. (Date-anchored, not ISO-week parity: `-UFormat %V`
+mis-computes weeks on Windows and week parity breaks across 53-week years.)
 
 You are the Innovation Backlog Routine for Orryx.
 
@@ -158,8 +160,10 @@ governance routines emit a SHORT "quiet day" report instead of skipping outright
 
 **4. Structured exit record (mandatory — every run, as the LAST step).** Append ONE
 line to `D:\reports\evolution\fleet-exit-log.jsonl`:
-`{"routine_id":"<this routine>","run_id":"<ISO-utc>","exit_status":"OK|SKIP|ABORT|FAIL","input_freshness":"FRESH|DEGRADE|ABORT|NA","output_produced_at":"<ISO-utc-or-null>","catch_up":false,"skip_reason":null,"consecutive_failures":0}`
-The `fleet-health-routine` reads this log. An `OK` row with `input_freshness:ABORT`
+`{"routine_id":"innovation-backlog-routine","run_id":"<ISO-utc>","exit_status":"OK|SKIP|ABORT|FAIL","input_freshness":"FRESH|DEGRADE|ABORT|NA","output_produced_at":"<ISO-utc-or-null>","catch_up":false,"skip_reason":null,"consecutive_failures":0}`
+`routine_id` is canonically `innovation-backlog-routine` (the scheduled-task
+directory name) — never the short alias `innovation-backlog`; historical rows
+under that alias are this routine. The `fleet-health-routine` reads this log. An `OK` row with `input_freshness:ABORT`
 is the "succeeded on stale data" case — never hide it. A SKIP for input-not-ready /
 NO_CHANGE / network is NOT a failure; do not increment `consecutive_failures`.
 

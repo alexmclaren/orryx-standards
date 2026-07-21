@@ -98,6 +98,26 @@ blast radius).
   Actual key validity / cloud-side confirmation requires operator credentials and is
   out of routine scope — state this rather than asserting validity.
 
+### Credential Live-State Gate (mechanical — AI-45 / HA-039, RF-13b)
+
+Git-history presence and prior reports are NOT evidence of current credential state
+(NEW-22 was re-asserted 7 consecutive weeks off git history after a CloudTrail-attested
+rotation). Two hard gates:
+
+1. **Before emitting any credential finding as open CRITICAL** (exposed / unrotated /
+   live): you MUST verify live provider state first — AWS Secrets Manager
+   `DescribeSecret.LastChangedDate`, RDS `MasterUserSecret`, and/or CloudTrail/IAM as
+   applicable. Record `verified_method: <api call>` and the observed timestamp on the
+   finding. No live verification → the finding may NOT be emitted as open CRITICAL
+   (report it as `UNVERIFIED — live check unavailable` instead).
+2. **Before accepting a rotation claim as resolved/closed**: cross-check the
+   credential's actual last-rotated timestamp at the provider (`LastChangedDate` /
+   `MasterUserSecret` rotation metadata) and confirm it is ≥ the claimed rotation date.
+   Ledger or prior-report claims alone MUST NOT close a rotation finding.
+
+These gates are mechanical, not judgment calls: a finding row that lacks
+`verified_method` fails the Machine Handoff gate below.
+
 ## Constraints
 
 You MUST NOT:
@@ -108,6 +128,10 @@ You MUST NOT:
 - read raw credential-store file contents (e.g. `D:\Secrets\`); use metadata only.
   A sandbox denial here is expected — do not retry.
 - perform live network/cloud calls (CloudTrail, IAM, RDS/SES) — note as out-of-scope.
+  **Sole exception:** the READ-ONLY credential live-state checks required by the
+  Credential Live-State Gate (SM `DescribeSecret`, RDS describe, CloudTrail lookup) —
+  these are mandatory, never mutating. If credentials for them are unavailable, apply
+  the gate's UNVERIFIED path; do not fall back to git-history assertion.
 
 ## Critical Halt Conditions
 
@@ -167,7 +191,17 @@ never renumber or reuse a retired ID):
 
 Severity ∈ {🔴 critical, 🟠 high, 🟡 medium}. Status ∈ {new, unchanged,
 ▲ improved, ▼ worse, resolved}. Owner ∈ {human, security, devops,
-approval-governance}. End the block with one line:
+approval-governance}.
+
+**Emit gate (credential findings — mechanical):** a credential finding may be emitted
+as 🔴 critical with status other than `resolved` ONLY if the Credential Live-State Gate
+ran this cycle and its `verified_method` + timestamp appear in the Finding column or
+Required action; likewise a credential finding may be emitted as `resolved` ONLY after
+the live last-rotated cross-check (gate #2) passed. Otherwise demote to 🟠 high with
+`UNVERIFIED — live check unavailable` (open claims) or hold prior status (closure
+claims).
+
+End the block with one line:
 `HALT-RELEVANT: <yes|no> — <which IDs feed a halt condition, if any>`.
 
 **Self-check before finalizing (mandatory):** run

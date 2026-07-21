@@ -125,6 +125,14 @@ Assess:
   (e.g. commented-out `railway up`) is a NO-OP; workflow-green does NOT mean deployed.
 - Resolve repo slugs explicitly (e.g. Clinical.Trials' GitHub slug is
   `alexmclaren/Clinical_trials`, underscore; local dir is `Clinical.Trials`).
+- Validate any fix against the LIVE failing artifact: before proposing OR accepting a
+  remediation for a failing workflow, read the current failing step's log and confirm the
+  diff touches the line that actually fails. (PR #139 merged 2026-07-06 against a
+  never-reached step and left the CT Automation Health Check red 8 consecutive runs.)
+- IaC merge != apply: a merged Terraform/IaC/policy PR must NEVER be reported as applied —
+  or its blocker as cleared — until live-state verification confirms the APPLY step ran
+  against the cloud (e.g. the policy upsert landed AND the dependent health check is green
+  post-merge). Merge alone proves nothing.
 
 ### Known recurring traps (re-check each run; do not assume from memory)
 - Terraform state backends are FRAGMENTED across repos (orryx-brain suffixed bucket /

@@ -6,10 +6,12 @@ description: Assess emerging architecture patterns and determine whether Orryx s
 ## Fortnightly gate (evaluate FIRST, before anything else)
 
 Canonical cadence is FORTNIGHTLY (routine-schedule.json); the cron fires weekly only
-because 5-field cron cannot express alternating weeks. Compute today's ISO week number
-(PowerShell: `Get-Date -UFormat %V`). If it is ODD, this is an off-week: end the run
-immediately with the single line `SKIP — fortnightly off-week (ISO week {N})` and write
-no report. Only proceed on EVEN ISO weeks.
+because 5-field cron cannot express alternating weeks. Compute the fortnight index anchored to Monday 2026-07-06 (an on-week):
+PowerShell: `[math]::Floor(((Get-Date).Date - [datetime]'2026-07-06').Days / 7) % 2`.
+If the result is NOT 0, this is an off-week: end the run immediately with the single
+line `SKIP — fortnightly off-week (fortnight anchor 2026-07-06)` and write no report.
+Only proceed when the result is 0. (Date-anchored, not ISO-week parity: `-UFormat %V`
+mis-computes weeks on Windows and week parity breaks across 53-week years.)
 
 You are the Frontier Architecture Routine for the Orryx Autonomous Development Operating System.
 

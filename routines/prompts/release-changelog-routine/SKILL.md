@@ -99,9 +99,24 @@ Per repo in scope:
 1. **Unreleased-changes summary** — the `<lasttag>..HEAD` commit set, categorised into **Features / Fixes / Breaking / Chore** by conventional-commit prefix (`feat:`, `fix:`, `feat!:`/`BREAKING CHANGE`, `chore:`/`docs:`/`refactor:`/`test:`/`ci:`/`build:`), best-effort classification where prefixes are absent (read the commit subject; do not fabricate). Note the count of unreleased commits and the last tag they build on.
 2. **Drafted changelog entry block** — a markdown block the operator can paste verbatim into `CHANGELOG.md`, matching the repo's existing heading style (or Keep a Changelog if none): a version heading + dated + the categorised bullet list. This is a DRAFT — the routine does not write it into the repo.
 3. **Suggested SemVer bump** — `patch` / `minor` / `major` with a one-line rationale tied to the categories (any Breaking → major; any Feature and no Breaking → minor; only Fixes/Chore → patch). Tag it as a suggestion the operator/executor applies.
-4. **Release-readiness verdict** — `ready` or `blocked-by: <reason>` where reason ∈ {open critical CVE (cite security-review handoff row), failing QA gate (cite qa-summary handoff row), unmet MVP exit criterion (cite mvp-progress), no unreleased changes (nothing to release), gate input ABORT-stale → BLOCKED-UNVERIFIED}.
+4. **Release-readiness verdict** — `ready` or `blocked-by: <reason>` where reason ∈ {open critical CVE (cite security-review handoff row), failing QA gate (cite qa-summary handoff row), unmet MVP exit criterion (cite mvp-progress), SKU launch preconditions unverified (see SKU-Launch Gate below), no unreleased changes (nothing to release), gate input ABORT-stale → BLOCKED-UNVERIFIED}.
 
 Portfolio roll-up: count of repos with unreleased work and count flagged ready-to-release.
+
+## SKU-Launch Gate (standing BLOCKING rule — RF-16 / FA-27 / HA-056, added 2026-07-21)
+
+When the unreleased change set introduces or touches a purchasable SKU, price, or
+purchase path, `ready` additionally requires cited mechanical evidence of ALL THREE
+launch preconditions: (1) an end-to-end LIVE test charge verifying the entitlement
+grant — webhook received AND entitlement row created; (2) live price objects
+matching the marketed pricing (no test price IDs in the prod secret); (3) payouts
+enabled on the payment account. Absent that evidence the verdict is
+`blocked-by: SKU launch preconditions unverified` — a preflight that merely
+DETECTS blockers is advisory; this gate is BLOCKING. (Context: Project Pass A$199
+shipped purchasable in prod (#326) against 4 unresolved Stripe preflight blockers
+incl. no live webhook — pay-without-grant. Code had a required deploy gate; the
+purchasable SKU had none.) Once the stripe-go-live-gate config is pushed (HA-030),
+cite its mechanical check output as the evidence for all three preconditions.
 
 ## Constraints
 
@@ -111,7 +126,7 @@ You MUST NOT:
 - commit, push, branch, merge, or modify any repo working tree (including `CHANGELOG.md` — the draft lives in the report only)
 - create a GitHub release, publish a package, or trigger a deploy
 - fabricate commits, changelog entries, or changes not present in `git log` — every drafted bullet must trace to a real commit
-- declare a repo "ready" while a cross-referenced qa-summary or security-review shows an open critical / failing gate, or while an mvp-progress exit criterion is unmet, or while its gate input is ABORT-stale
+- declare a repo "ready" while a cross-referenced qa-summary or security-review shows an open critical / failing gate, or while an mvp-progress exit criterion is unmet, or while its gate input is ABORT-stale, or while a touched purchasable SKU's launch preconditions are unverified (SKU-Launch Gate)
 - write any file other than the one dated report (no `.proposed.*`, no edits to source repos, no GitHub issues)
 - reference or assume any host other than AWS + Cloudflare (platform constraint)
 

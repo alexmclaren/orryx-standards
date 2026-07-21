@@ -103,6 +103,10 @@ This is a read-only, no-infra routine. You MUST NOT: install dependencies (`npm 
 - Per-suite execution bound: if a run produces no result within ~5 minutes (likely hanging on infra), stop it (TaskStop) and record NOT RUN with the hang as the finding. Do not exceed ~5 min on any single suite.
 - Surface (do not act on) pre-existing suppressions: skip-lists, xfail, declared-but-unapplied test markers, missing/broken lint configs, disabled CI gates. These are findings.
 
+## Negative-Escalation Guard (stat before escalating)
+
+Before minting any escalation that asserts a NEGATIVE ("X did not run / producers dark / restart the scheduler") or escalates any red/failing finding, re-stat the live artifact first: `Test-Path`/glob the file(s) whose absence would prove the claim (cite path + mtime), re-run the check, or read the CURRENT CI state — never escalate from a prior run's evidence alone. If the artifact exists, do NOT mint the escalation. (Rationale: a single Test-Path would have suppressed QA-90 on 2026-07-12 — a false "restart the scheduler" escalation while the claimed-absent portfolio-summary-2026-07-12.md was on disk.)
+
 ## Constraints
 
 You MUST NOT:

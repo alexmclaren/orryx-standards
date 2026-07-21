@@ -34,6 +34,9 @@ have emitted. Use the **PowerShell tool** for all `D:\` access (Bash fails on
    per routine run (see `_shared/PRODUCER_PRECHECK.md` §4): `routine_id, run_id,
    exit_status (OK|SKIP|ABORT|FAIL), input_freshness, output_produced_at, catch_up,
    skip_reason, consecutive_failures`. Read today's lines (and recent tail for trend).
+   `routine_id` canonically equals the scheduled-task directory name; treat the
+   historical alias `innovation-backlog` as equal to `innovation-backlog-routine`
+   when keying rows and counting consecutive runs.
 3. **Handoff-validation log:** `D:\reports\evolution\handoff-validation.jsonl` —
    the validator's PASS/FAIL trail per contracted routine (reason codes + attempts).
 4. **Breaker state:** `D:\state\fleet-breakers.json` — per-routine consecutive-failure
