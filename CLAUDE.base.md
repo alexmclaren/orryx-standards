@@ -88,6 +88,28 @@ Always verify against:
 - Logs
 - API responses
 
+#### Verify at the SOURCE, never at a PROXY
+
+Most false "done" reports come from checking something that merely *should*
+reflect reality. Desired state is not observed state. Use the right-hand column:
+
+| Claim | PROXY (insufficient) | SOURCE (required) |
+|---|---|---|
+| Env var / feature flag is set | ConfigMap or Secret value | `kubectl exec <pod> -- printenv VAR` on **every** pod |
+| Deploy applied the change | workflow run succeeded | the value read back off the running resource |
+| Tests pass | local run, or a push that succeeded | the CI check's own conclusion |
+| Formatting is clean | `black`/`isort` run locally | `pre-commit run` (it pins its own versions) |
+| PR is green | a summary, or a subset of checks | 0 failing **and** 0 pending |
+| Data is in region X | a region setting in config | the storage resource's actual location |
+| Doc claim is true | the doc says "verified" | re-check against the live system, today |
+
+**A ConfigMap change does not reach running pods.** A rollout restart is
+required. This has caused a silent revert in production more than once — the
+value read `True` while every pod served `False`.
+
+Corollary: when reporting, state the source you checked. "Flag is on" is not a
+result; "printenv returned True on both pods, revision 501" is.
+
 ---
 
 ### 0.5 THE DECISION HIERARCHY (PRODUCT DESIGN STANDARD)
