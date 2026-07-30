@@ -219,6 +219,16 @@ State file: `D:\state\fleet-breakers.json` (sibling of `handoff-contract.json`).
 - Working tree has a dirty file older than **7 days** (file mtime).
 - **>20 commits** OR **>14 days** behind its integration branch.
 - **>15 local branches**, OR any branch with no commit in **>30 days**.
+  - **Dormant-repo exemption.** The >30d wire does NOT fire on a repo's own
+    integration branch (`main`/`master`/`develop`) when that is the **only**
+    local branch: a repo whose sole branch is its integration branch is
+    dormant, not divergent, and reporting it as divergence is inflation.
+    The exemption is deliberately narrow — it does NOT apply when ≥2 local
+    branches exist (an aged `main` beside live feature branches IS real
+    staleness), NOT to the >15-branch wire, and NOT to any other tripwire:
+    a dormant repo still flags on dirty-file age, missing remote, stashes,
+    detached HEAD, or submodule state. When applied, name the exempted repos
+    and their branch ages inline and classify them 🟢.
 - A **stash older than 7 days**, OR ANY stash whose `stash show --stat`
   includes a non-`.md`/`.txt` source file (source in a stash flags regardless
   of age).

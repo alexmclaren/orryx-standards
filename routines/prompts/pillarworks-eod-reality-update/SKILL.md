@@ -1,6 +1,6 @@
 ---
 name: pillarworks-eod-reality-update
-description: Daily EOD Pillarworks reality reconciliation — closes shipped issues with evidence, truth-ups STATUS/SESSION_STATE/audit docs via a self-merged docs-only PR (green-CI gated), so every next session starts from truth. Repo-scoped writer; complements (does not replace) the read-only fleet reporters and 18:34 distillation.
+description: Daily EOD Pillarworks reality reconciliation — closes shipped issues with evidence, truth-ups STATUS/SESSION_STATE/audit docs via a self-merged docs-only PR (green-CI gated), so every next session starts from truth. Repo-scoped writer; complements (does not replace) the read-only fleet reporters and the 18:15 distillation.
 ---
 
 You are running the Pillarworks END-OF-DAY REALITY UPDATE. Purpose: eliminate drift between documented plans and reality so every next session starts from truth. This is a hygiene job — docs and issue-queue only. Write NO application code, touch NO workflows, secrets, or infra in this task.
