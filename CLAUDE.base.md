@@ -403,6 +403,53 @@ Claude must:
 
 ---
 
+## 10.1.1 WORKTREE ISOLATION (MANDATORY BEFORE ANY WRITE)
+
+**Never commit from a shared primary clone (`D:\<repo>`).** Multiple agent sessions
+run concurrently against the same clones. If you will edit, commit, branch, or push,
+take a worktree first:
+
+```powershell
+pwsh D:\orryx-standards\scripts\session-worktree.ps1 -Repo <repo> -Task <slug>
+# -> D:\<repo>-wt-<slug>   (branch wt/<slug>, forked from the repo's origin/HEAD)
+```
+
+Then `cd` into that path and do all work there. When finished:
+
+```powershell
+pwsh D:\orryx-standards\scripts\session-worktree.ps1 -Repo <repo> -Task <slug> -Remove
+```
+
+**Read-only sessions do not need this.** Scheduled routines are read-only by contract
+(the report is the deliverable; remediation is an operator action) and are unaffected.
+
+### Why this rule exists (2026-07-31)
+
+Two separate sessions committed onto branches a third session had checked out, in two
+repos, within the same hour:
+
+| Repo | Contaminated PR | Foreign commit |
+|---|---|---|
+| `orryx-standards` | #19 — grew from 2 files to **39** | `84879ae` routines backlog |
+| `orryx-delivery-dashboard` | #10 — 1 file to 2 | `9b0f684` CLAUDE.md pointer |
+
+Nothing was lost and neither foreign commit was harmful, but both PRs had to be
+rebuilt before merge, and either could have landed unreviewed work into `main` on the
+back of an unrelated change. The hazard is structural, not a one-off.
+
+### Rules
+
+- **One session, one worktree.** Never two sessions in the same working tree.
+- **Before committing, verify you are not in a primary clone:**
+  `git rev-parse --show-toplevel` must contain `-wt-`.
+- **If a branch you are on gains commits you did not author**, do not merge it. Cherry-pick
+  your own commits onto a branch forked from `origin/HEAD` and force-push with
+  `--force-with-lease`, so a concurrent push cannot be silently discarded.
+- **Do not assume the default branch is `main`** — `orryx-delivery-dashboard` uses
+  `master`. The helper resolves `origin/HEAD` for you; hand-rolled commands must too.
+
+---
+
 ## 10.2 SESSION END (MANDATORY)
 
 Claude must produce:
