@@ -254,6 +254,31 @@ Pay attention to recurring traps: `.gitignore` globs bypassed by literal/unexpan
 filenames, secret-laden state backups, and credentials reused across repos (shared
 blast radius).
 
+### Editing `.gitignore` — use the canonical snippet, do not compose one
+
+When this routine adds or repairs secret-ignore rules, **copy the canonical block**
+from `gitignore-snippets/secrets.gitignore` in this repo. Do **not** author one from
+memory per-repo.
+
+**Hard rule: never write a `.env*` negation.** Only `!.env.example` is permitted.
+`!.env.production` and `!.env.staging` are forbidden in every repo, no exceptions.
+
+*Why this rule exists (2026-07-30):* a run of this routine composed its own block and
+re-enabled those two negations, justified as "permits public Vite build config —
+client-inlined". It then applied that block verbatim to three repos. The rationale is
+wrong in both directions — Next.js inlines only `NEXT_PUBLIC_*`, Vite only `VITE_*`, so
+in either framework a `.env.production` can still hold server-side or build-time
+secrets — and two of the three repos were not Vite projects at all. The negations
+force-tracked precisely the files most likely to hold credentials.
+
+If a repo genuinely needs public build config committed, use a distinctly named
+non-`.env` file (e.g. `public-build-config.json`). The name `.env` is what makes
+tooling, humans and future agents assume "secrets live here".
+
+**Before proposing any `.gitignore` edit, prove it:** create a throwaway
+`.env.production`, run `git check-ignore -v .env.production`, confirm it is ignored,
+delete it. Report the check output. Do not claim the fix works without it.
+
 ## Verification Protocol (mandatory before escalating any CRITICAL)
 
 - You MAY delegate broad sweeps to subagents to protect context.
