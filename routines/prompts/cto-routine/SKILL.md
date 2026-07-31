@@ -104,7 +104,13 @@ Ledger discipline: while inputs are ABORT-stale, the Auto-close rule (2 non-repr
 > `skip_reason` (§1 step 2a); and ALWAYS append the §4 structured exit row to
 > `D:\reports\evolution\fleet-exit-log.jsonl` as the LAST step of every run.
 
-**Routine-specific gate (applies on top of canonical §1):** your ONLY hard `required_inputs` are **`security-review` + `qa-summary`** (`D:\reports\security\security-review-{today}.md`, `D:\reports\qa\qa-summary-{today}.md`) — if both are present (even if either is itself a SKIP), the gate is satisfied → proceed. Every other Required Input above (portfolio-summary, devops-summary, dependency-analysis, etc.) is SOFT.
+**Routine-specific gate (applies on top of canonical §1):** your ONLY hard `required_input` is **`qa-summary`** (`D:\reports\qa\qa-summary-{today}.md`) — if it is present (even if it is itself a SKIP), the gate is satisfied → proceed. Every other Required Input above (`security-review`, portfolio-summary, devops-summary, dependency-analysis, etc.) is SOFT.
+
+> **[`security-review` is SOFT-with-DEGRADE — relaxed 2026-07-31, was a hard AND-leg.]** It gated this routine jointly with `qa-summary` until the 2026-07-31 SKIP proved the cost: **9 of 10 load-bearing inputs were 0d FRESH on disk** (repo-health 11/11 + INDEX + portfolio, dependency-analysis, documentation-sync, devops-summary, git-hygiene, harness-propagation, competitive-intelligence, qa-summary) and the single missing security leg dark-dayed the entire synthesis — while the security baseline already on disk was **1d old and entirely usable**. A 1d security carry is strictly better than zero synthesis. Root cause was not a security outage but an **off-cron app-open burst** firing `security-routine` at 22:32Z, ~1.9h before its own 12:50 AEST cron, against a repo-health cohort that landed 37 min later.
+>
+> **When `security-review-{today}.md` is absent: do NOT SKIP.** Fall back to the newest `security-review-*.md` on disk and age-tier it through the Input Freshness Gate exactly like any other soft input — **≤2d FRESH; 2–7d DEGRADE** (cap derived severity at `HIGH`, prefix the finding `⚠ STALE(Nd):`); **>7d ABORT** (derive **no** security-axis escalations at all). Record its exact age and `last_verified` in §Uncertainty / Caveats, and state plainly in the report that the security axis is a **carry-forward, not a same-day read**.
+>
+> **Hard limits on a carried security baseline — these are not negotiable:** never assert a security finding as same-day-verified off it; never auto-close, resolve, or re-age a security `ESC`/`NEW` from it (the Auto-close and Stuck rules stay SUSPENDED for the security axis on any carry); and never let a carried baseline satisfy the Credential Live-State Gate — a credential finding still requires a live attestation before it may be emitted as `CRITICAL`.
 
 > **[CARVE-OUT — do NOT SKIP on these]** `dependency-analysis` (+ `state/dependency-graph.json`) and `frontier-architecture` are **WEEKLY** producers (Mon / Sun), NOT same-day inputs — never treat their absence as a same-day SKIP trigger. Age-tier them via the Input Freshness Gate instead (≤8d usable; older = DEGRADE and synthesize without the structural spine). Treating the weekly `dependency-analysis` as required-same-day is exactly what dark-SKIPped this routine 6 days running (06-30→07-04).
 
@@ -113,6 +119,36 @@ Ledger discipline: while inputs are ABORT-stale, the Auto-close rule (2 non-repr
 **Full rules — verbatim in-context snapshot of `_shared/PRODUCER_PRECHECK.md` §1–§5 (the file is authoritative; if this snapshot and the file disagree, the file wins):**
 
 **1. Producer pre-check (run FIRST, before any work)**
+
+> **`{date}` BASIS — DECLARED, NON-OPTIONAL (DOC-36, declared 2026-07-31).**
+> Every `{date}` / `{today}` in a **filename, report heading, or glob** is the
+> **LOCAL date** — `Australia/Brisbane`, **UTC+10, no DST** (so the offset is
+> constant year-round). It is NOT the UTC date.
+>
+> Every **timestamp** — `run_id`, `output_produced_at`, `scan_completed_utc`,
+> exit-log rows — stays **UTC ISO-8601 with `Z`**. Date labels are local,
+> timestamps are UTC; they are different fields and neither substitutes for the
+> other. Deriving a date label by truncating a UTC timestamp is the bug.
+>
+> **Why it is not cosmetic.** Local is UTC+10, so from **14:00Z to 24:00Z**
+> (00:00–10:00 local) the two bases name different days. A routine labelling on
+> the wrong basis writes an artifact its own consumers cannot glob; they read the
+> producer as dark and emit a well-formed, contract-compliant SKIP while the
+> input sits on disk under the adjacent day's name. Observed live:
+> `documentation-sync` SKIPped at 2026-07-30T21:46Z, six minutes before
+> `repo-scanner` produced the input it needed under the UTC label.
+>
+> **Stamp it.** Every dated artifact carries `date_basis: LOCAL (UTC+10)` in its
+> header block, beside the clock-verification line.
+>
+> **Transition rule — glob BOTH bases until the corpus is uniform.** Artifacts
+> written before 2026-07-31 use both (~854 local / ~34 UTC as measured
+> 2026-07-31). Before committing `PRODUCER_NOT_YET_FIRED` or any "not produced
+> today" SKIP, glob the producer under **both** `{local-date}` **and**
+> `{local-date − 1}`. If the older label was written during the current local
+> day, it IS today's artifact — consume it, and record the basis mismatch as a
+> finding rather than skipping. Never commit such a SKIP without having globbed
+> both. This rule composes with — does not replace — step 2a below.
 
 For each entry in your `required_inputs` (from routine-schedule.json):
 
@@ -220,6 +256,20 @@ As the LAST step, append ONE line to `D:\reports\evolution\fleet-exit-log.jsonl`
 {"routine_id":"<id>","run_id":"<ISO-utc>","exit_status":"OK|SKIP|ABORT|FAIL","input_freshness":"FRESH|DEGRADE|ABORT|NA","output_produced_at":"<ISO-utc-or-null>","catch_up":false,"skip_reason":null,"consecutive_failures":0}
 ```
 
+- **`run_id` and `output_produced_at` MUST come from a clock read taken as you
+  write this row, verified from two independent sources** (e.g. PowerShell
+  `(Get-Date).ToUniversalTime()` and `python -c "datetime.now(timezone.utc)"`).
+  This is the same two-source check ESC-018 already requires before dating a
+  report — §4 simply never extended it to the exit row. If the two sources
+  disagree, stop and resolve the skew; do not pick one.
+  **Never synthesise `run_id`** from the scheduled fire slot, a rounded hour, or
+  the previous run's value — a slot-derived `run_id` is indistinguishable from a
+  real one downstream and can sit hours from the work it labels.
+  **Sanity check before appending:** `run_id` must be within minutes of your
+  artifact's on-disk mtime. If it is not, your clock or your source is wrong —
+  fix it before writing, do not write the row and note the discrepancy.
+  *(HP-23, 2026-07-31: a row logged `run_id 2026-07-31T02:20:00Z` for an artifact
+  whose mtime was `2026-07-30T22:38:53Z` — 3h42m ahead of the work it described.)*
 - `routine_id` MUST equal the scheduled-task directory name (e.g.
   `innovation-backlog-routine`, never a short form like `innovation-backlog`).
   Consumers (`fleet-health-routine`) treat known historical aliases
