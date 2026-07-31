@@ -191,8 +191,71 @@ For each entry in your `required_inputs` (from routine-schedule.json):
      mtime @16:11:14), NOT a missed run. Only emit `SKIP: not produced today` when the
      producer is genuinely dark (no fire expected or long-overdue). Set `skip_reason`
      accordingly so `fleet-health-routine` can tell a transient race from an outage.
-   - After 2a/2b, if still absent: write the structured exit record (§4) and STOP. You
-     will be picked up on the next window once the producer runs (or on catch-up).
+     ⚠️ **"Expect a re-fire on a later window" is NOT automatic. It was assumed for
+     months and it is FALSE — see 2c. Without an explicit requeue, an off-cron
+     burst-fired SKIP costs the ENTIRE DAY.**
+   - **2c. REQUEUE yourself at your real cron (burst-fire recovery). MANDATORY whenever
+     you emit a `PRODUCER_NOT_YET_FIRED` SKIP (2b).**
+
+     **Why (measured 2026-07-31, not theorised).** The scheduler enforces
+     **once-per-cron-period, keyed on `lastRunAt`**. On an app-open catch-up burst it
+     replays missed slots; that replay stamps `lastRunAt` inside *today's* period, today
+     is then considered satisfied, and `nextRunAt` jumps to **tomorrow** — even when your
+     real slot today is still hours away. Observed live: `cto-routine` burst-fired 09:53
+     local, SKIPped at 10:56, and its `nextRunAt` was already `2026-08-01T04:23Z` while
+     its own 14:15 slot that day had not yet happened. **A burst-fired run CONSUMES the
+     day's real slot.**
+
+     **Two things that do NOT work — do not try them:**
+     - **Re-setting `cronExpression` does not claw the slot back.** Verified: setting the
+       same value is a silent no-op, and setting a *different* value (`15 14`→`16 14`)
+       did recompute `nextRunAt` (it shifted by exactly one minute) but still landed on
+       **tomorrow**, because the once-per-period rule still sees `lastRunAt` = today.
+     - **NEVER pass `fireAt` to `update_scheduled_task` on your own recurring task.**
+       `fireAt` is mutually exclusive with `cronExpression` and **permanently clears the
+       recurring schedule**. That converts a daily routine into a one-shot and is how you
+       silently kill a routine forever.
+
+     **What to do instead — mint a SEPARATE one-time task** (one-time tasks fire without
+     jitter and auto-disable after running, so they are self-cleaning):
+
+     1. **Gate.** Only requeue if today's cron slot for your own `routine_id` is still in
+        the FUTURE (local time). If it has already passed, do nothing — you will fire
+        normally tomorrow and a requeue would just double-run.
+     2. **Idempotency.** Task id is `requeue-<routine_id>-<YYYY-MM-DD>` (LOCAL date). If
+        `list_scheduled_tasks` already shows that id, **do nothing** — one requeue per
+        routine per day, never a chain.
+     3. **Create** via `mcp__scheduled-tasks__create_scheduled_task` (load it with
+        ToolSearch first; it is a deferred tool) with `fireAt` = today's cron slot in
+        ISO-8601 **with the +10:00 offset** (e.g. `2026-07-31T14:15:00+10:00`), and a
+        fully self-contained `prompt` — the requeued run starts with no memory of this
+        one, so the prompt must say: run `<routine_id>` per
+        `C:\Users\alexa\.claude\scheduled-tasks\<routine_id>\SKILL.md`, note that it is an
+        automatic burst-fire requeue, and re-run the §1 pre-check from scratch.
+     4. **Record it** in the SKIP `skip_reason`: `requeued_at:<ISO>` plus the task id, so
+        `fleet-health-routine` can tell a recovered SKIP from a lost day.
+     5. **Clean up** on your next `OK` run: delete any `requeue-<routine_id>-*` task whose
+        date is before today (`delete_scheduled_task`). Disabled one-time tasks linger in
+        the registry otherwise.
+
+     **Scope.** This is for the *gated-consumer* case only — a SKIP caused by a producer
+     that has not run yet. Do NOT requeue a genuine dark-day SKIP, a `NO_CHANGE` skip, a
+     breaker trip, or an `ABORT`; none of those are fixed by running again today.
+
+     ⚠️ **KNOWN LIMITATION — tool approvals do not transfer.** Tool approvals are stored
+     **per task**, so a freshly-minted `requeue-*` task starts with **none**, even though
+     the routine it stands in for has accumulated its own. An unattended requeued run can
+     therefore pause on a permission prompt instead of completing — the same per-task
+     approval-loss failure mode that froze sessions in the 2026-07-22 scheduler-registry
+     wipe. Consequences to accept, in order of preference: (a) keep the requeued run's
+     work inside tools the routine already uses and the operator has broadly allowed;
+     (b) treat a requeue as best-effort — it converts a *certain* lost day into a *likely*
+     recovered one, never a guaranteed one; (c) if a requeue is observed stalling on
+     approvals, say so in the exit record rather than silently re-minting it tomorrow.
+     **Do not paper over this by granting broad permissions to a generated task.**
+   - After 2a/2b/2c, if still absent: write the structured exit record (§4) and STOP.
+     With 2c done you will re-fire at your real slot today; without it, not until
+     tomorrow (or the next catch-up burst).
 3. **If present:** continue to the freshness gate (`INPUT_FRESHNESS_GATE.md`) for
    age-tiering, then proceed.
 
