@@ -1,12 +1,15 @@
 {
   "_meta": {
     "purpose": "Canonical source of truth for the Orryx routine fleet schedule + dependency DAG. The live scheduler is ALIGNED to this file, not the reverse. Human-readable companion: ROUTINES.md.",
-    "version": 1,
+    "version": 2,
     "created": "2026-06-28",
+    "revised": "2026-07-30",
+    "revision_note": "v2 2026-07-30 — WINDOW MOVE 04:32-10:34 -> 12:00-19:00 AEST. Root cause: the scheduler only dispatches while the desktop app is open, and the entire fleet block sat in hours the host is asleep (04:32-10:34 AEST = 18:32Z-00:34Z). On app-open the dispatcher replays missed slots in ascending slot order but caps at ~6 concurrent sessions; routines take 20-60 min each, so ~25 daily tasks needed 2+ hrs of continuous uptime to drain and never got it. The chronological tail (ceo -> daily-planner -> approval-gov -> execution-safety -> engineering -> r11 -> briefing-writer -> triage -> failure-analysis -> eod -> memory-consolidation) was never reached and read as 'dormant' on the beacon for 10 days. Fix is the window, NOT a dispatcher (a re-fire dispatcher was considered and rejected 2026-07-30 as fragile on the app-open-burst model). EVERY dependency gap in v2 is >= its v1 value - no ordering regression. Note: the scheduler adds a deterministic per-task jitter of up to ~9.5 min at dispatch, so actual fire times run a few minutes later than the cron value.",
     "timezone": "Australia/Brisbane (AEST, UTC+10)",
+    "window": "12:00-19:00 AEST daily block; chosen because the host is reliably live in that range. Do NOT schedule fleet work outside it - anything before ~12:00 or after ~19:10 lands while the app is closed and only runs as a catch-up burst.",
     "ordering_model": "Wall-clock cron staggers by layer give correct order on a normal day; CORRECTNESS rests on the per-consumer producer pre-check (see _shared/PRODUCER_PRECHECK.md), NOT on the clock. A consumer whose same-day required input is absent SKIPs rather than consuming stale/older data.",
     "cadence_rationale": "Daily is justified only when the input changes daily AND a day of staleness causes harm. Freshness-critical (security, safety, repo state) + the operator-facing governance spine stay daily; strategic/evolution routines that synthesize slow-moving internal state run weekly/fortnightly or are condition-triggered with a NO_CHANGE skip.",
-    "circular_dep_adr": "daily-planner <-> orchestration is broken by TEMPORAL SPLIT: orchestration runs night-of (N, 23:xx) over the full same-day cohort and SEEDS the next morning; daily-planner (N+1 morning) consumes the PRIOR-NIGHT master-operating-plan(N). The edge is one-directional across days: producers(N) -> orchestration(N) -> daily-planner(N+1). Do NOT move orchestration to morning (would re-introduce the spine-gap race).",
+    "circular_dep_adr": "daily-planner <-> orchestration is broken by TEMPORAL SPLIT: orchestration runs terminal-of-day (N, 19:00) over the full same-day cohort and SEEDS the next day; daily-planner (N+1, 15:50) consumes the PRIOR-DAY master-operating-plan(N). The edge is one-directional across days: producers(N) -> orchestration(N) -> daily-planner(N+1), now a ~21h gap. Do NOT move orchestration earlier than the same-day cohort (would re-introduce the spine-gap race). v1 placed it at 23:30, which satisfied the ADR but sat outside every live-host window, so it went dark; 19:00 is the latest slot that is both after the full cohort and inside the window.",
     "layers": {
       "L0": "root producers \u2014 scan ground truth directly, never consume sibling reports",
       "L1": "synthesis producers \u2014 consume L0, emit domain intelligence",
@@ -20,7 +23,7 @@
   "routines": {
     "fleet-security-audit": {
       "cadence": "monthly",
-      "cron": "0 3 1 * *",
+      "cron": "30 12 1 * *",
       "layer": "L0",
       "depends_on": [],
       "required_inputs": [],
@@ -29,16 +32,17 @@
     },
     "repo-scanner": {
       "cadence": "daily",
-      "cron": "30 4 * * *",
+      "cron": "0 12 * * *",
       "layer": "L0",
       "depends_on": [],
       "required_inputs": [],
       "produces": "D:\\reports\\repo-health\\portfolio-summary-{date}.md",
-      "id_prefix": null
+      "id_prefix": null,
+      "note": "ROOT producer - opens the window at 12:00; every L1+ consumer keys off its portfolio-summary"
     },
     "competitive-intelligence-routine": {
       "cadence": "fortnightly",
-      "cron": "0 8 * * 6",
+      "cron": "0 13 * * 6",
       "layer": "L0",
       "depends_on": [],
       "required_inputs": [],
@@ -48,7 +52,7 @@
     },
     "deep-research-routine": {
       "cadence": "weekly",
-      "cron": "0 7 * * 0",
+      "cron": "30 12 * * 0",
       "layer": "L0",
       "depends_on": [],
       "required_inputs": [],
@@ -59,7 +63,7 @@
     },
     "dependency-graph-builder": {
       "cadence": "weekly",
-      "cron": "0 5 * * 1",
+      "cron": "40 12 * * 1",
       "layer": "L1",
       "depends_on": [
         "repo-scanner"
@@ -72,7 +76,7 @@
     },
     "documentation-sync": {
       "cadence": "condition",
-      "cron": "0 5 * * *",
+      "cron": "35 12 * * *",
       "layer": "L1",
       "depends_on": [
         "repo-scanner"
@@ -86,7 +90,7 @@
     },
     "security-routine": {
       "cadence": "daily",
-      "cron": "20 5 * * *",
+      "cron": "50 12 * * *",
       "layer": "L1",
       "depends_on": [
         "repo-scanner"
@@ -100,7 +104,7 @@
     },
     "git-hygiene-routine": {
       "cadence": "daily",
-      "cron": "30 5 * * *",
+      "cron": "10 12 * * *",
       "layer": "L1",
       "depends_on": [
         "repo-scanner"
@@ -111,7 +115,7 @@
     },
     "harness-propagation-routine": {
       "cadence": "condition",
-      "cron": "45 5 * * *",
+      "cron": "20 12 * * *",
       "layer": "L1",
       "depends_on": [],
       "required_inputs": [],
@@ -121,7 +125,7 @@
     },
     "qa-routine": {
       "cadence": "daily",
-      "cron": "0 6 * * *",
+      "cron": "30 13 * * *",
       "layer": "L2",
       "depends_on": [
         "security-routine",
@@ -136,7 +140,7 @@
     },
     "devops-routine": {
       "cadence": "daily",
-      "cron": "12 6 * * *",
+      "cron": "50 13 * * *",
       "layer": "L2",
       "depends_on": [
         "security-routine",
@@ -151,7 +155,7 @@
     },
     "cto-routine": {
       "cadence": "daily",
-      "cron": "35 6 * * *",
+      "cron": "15 14 * * *",
       "layer": "L2",
       "depends_on": [
         "security-routine",
@@ -168,7 +172,7 @@
     },
     "product-routine": {
       "cadence": "weekly",
-      "cron": "50 6 * * 1",
+      "cron": "45 14 * * 1",
       "layer": "L2",
       "depends_on": [
         "cto-routine",
@@ -183,7 +187,7 @@
     },
     "commercialstrategy-routine": {
       "cadence": "weekly",
-      "cron": "0 7 * * 3",
+      "cron": "45 14 * * 3",
       "layer": "L2",
       "depends_on": [
         "product-routine",
@@ -193,11 +197,12 @@
         "product-review"
       ],
       "produces": "D:\\reports\\daily\\commercial-review-{date}.md",
-      "id_prefix": "CS"
+      "id_prefix": "CS",
+      "note": "cross-cadence with its inputs (Wed routine, Mon product-review) - consumes newest within the 7d freshness gate, never a same-day hard gate"
     },
     "release-changelog-routine": {
       "cadence": "condition",
-      "cron": "20 7 * * *",
+      "cron": "35 14 * * *",
       "layer": "L2",
       "depends_on": [
         "devops-routine"
@@ -209,7 +214,7 @@
     },
     "secret-rotation-tracker": {
       "cadence": "daily",
-      "cron": "30 7 * * *",
+      "cron": "50 14 * * *",
       "layer": "L2",
       "depends_on": [
         "security-routine"
@@ -223,7 +228,7 @@
     },
     "finops-routine": {
       "cadence": "weekly",
-      "cron": "0 7 * * 5",
+      "cron": "45 14 * * 5",
       "layer": "L2",
       "depends_on": [
         "devops-routine",
@@ -235,7 +240,7 @@
     },
     "mvp-delivery-routine": {
       "cadence": "weekly",
-      "cron": "30 6 * * 1",
+      "cron": "25 14 * * 1",
       "layer": "L2",
       "depends_on": [
         "product-routine"
@@ -246,7 +251,7 @@
     },
     "ceo-routine": {
       "cadence": "daily",
-      "cron": "15 8 * * *",
+      "cron": "25 15 * * *",
       "layer": "L3",
       "depends_on": [
         "cto-routine",
@@ -263,7 +268,7 @@
     },
     "daily-planner-routine": {
       "cadence": "daily",
-      "cron": "30 8 * * *",
+      "cron": "50 15 * * *",
       "layer": "L3",
       "depends_on": [
         "ceo-routine"
@@ -273,11 +278,11 @@
       ],
       "produces": "D:\\reports\\daily\\daily-plan-{date}.md",
       "id_prefix": "DP",
-      "note": "consumes PRIOR-NIGHT master-operating-plan; see circular_dep_adr"
+      "note": "consumes PRIOR-DAY master-operating-plan (orchestration 19:00 the night before, ~21h earlier); see circular_dep_adr"
     },
     "approval-governance-routine": {
       "cadence": "daily",
-      "cron": "45 8 * * *",
+      "cron": "10 16 * * *",
       "layer": "L3",
       "depends_on": [
         "ceo-routine",
@@ -293,7 +298,7 @@
     },
     "execution-safety-routine": {
       "cadence": "daily",
-      "cron": "0 9 * * *",
+      "cron": "30 16 * * *",
       "layer": "L3",
       "depends_on": [
         "ceo-routine",
@@ -309,7 +314,7 @@
     },
     "engineering-routine": {
       "cadence": "daily",
-      "cron": "15 9 * * *",
+      "cron": "50 16 * * *",
       "layer": "L6",
       "depends_on": [
         "execution-safety-routine",
@@ -325,7 +330,7 @@
     },
     "r11-safe-resolver": {
       "cadence": "daily",
-      "cron": "30 9 * * *",
+      "cron": "10 17 * * *",
       "layer": "L6",
       "depends_on": [
         "execution-safety-routine",
@@ -348,11 +353,11 @@
       ],
       "produces": "D:\\reports\\evolution\\failure-analysis-{date}.md",
       "id_prefix": "FA",
-      "note": "MUST run before memory-consolidation"
+      "note": "UNCHANGED in v2 - already inside the window. Consumes PRIOR-DAY eod-summary, so it does not race same-day eod. MUST run before memory-consolidation."
     },
     "end-of-day-distillation-routine": {
       "cadence": "daily",
-      "cron": "30 18 * * *",
+      "cron": "15 18 * * *",
       "layer": "L5",
       "depends_on": [
         "ceo-routine"
@@ -365,7 +370,7 @@
     },
     "memory-consolidation-routine": {
       "cadence": "daily",
-      "cron": "0 19 * * *",
+      "cron": "40 18 * * *",
       "layer": "L5",
       "depends_on": [
         "failure-analysis-routine",
@@ -379,7 +384,7 @@
     },
     "knowledge-ingestion-routine": {
       "cadence": "weekly",
-      "cron": "0 8 * * 0",
+      "cron": "0 13 * * 0",
       "layer": "L5",
       "depends_on": [],
       "required_inputs": [],
@@ -388,7 +393,7 @@
     },
     "orchestration-routine": {
       "cadence": "daily",
-      "cron": "30 23 * * *",
+      "cron": "0 19 * * *",
       "layer": "L3",
       "depends_on": [
         "ceo-routine",
@@ -401,11 +406,11 @@
       ],
       "produces": "D:\\reports\\daily\\master-operating-plan-{date}.md",
       "id_prefix": null,
-      "note": "night-of terminal synthesis; seeds next-morning daily-planner"
+      "note": "TERMINAL synthesis - closes the window at 19:00, seeds next-day daily-planner (15:50). Moved from 23:30 in v2: 23:30 satisfied the ADR but sat outside every live-host window so it went dark. 19:00 is the latest slot that is both after the full same-day cohort and inside the window."
     },
     "autonomous-improvement-routine": {
       "cadence": "fortnightly",
-      "cron": "0 9 * * 0",
+      "cron": "0 14 * * 0",
       "layer": "L4",
       "depends_on": [
         "capability-benchmarking-routine"
@@ -413,11 +418,11 @@
       "required_inputs": [],
       "produces": "D:\\reports\\evolution\\autonomous-improvement-{date}.md",
       "id_prefix": "AI",
-      "note": "fortnightly Sun (week B); chain: AI 09:00 -> frontier 10:00 -> prompt-evolution 11:00"
+      "note": "fortnightly Sun (week B); chain: AI 14:00 -> frontier 15:00 -> prompt-evolution 16:00"
     },
     "frontier-architecture-routine": {
       "cadence": "fortnightly",
-      "cron": "0 10 * * 0",
+      "cron": "0 15 * * 0",
       "layer": "L4",
       "depends_on": [
         "deep-research-routine"
@@ -428,7 +433,7 @@
     },
     "prompt-evolution-routine": {
       "cadence": "weekly",
-      "cron": "0 11 * * 0",
+      "cron": "0 16 * * 0",
       "layer": "L4",
       "depends_on": [
         "frontier-architecture-routine",
@@ -442,7 +447,7 @@
     },
     "capability-benchmarking-routine": {
       "cadence": "fortnightly",
-      "cron": "0 21 * * 1",
+      "cron": "35 18 * * 1",
       "layer": "L4",
       "depends_on": [],
       "required_inputs": [],
@@ -451,7 +456,7 @@
     },
     "innovation-backlog-routine": {
       "cadence": "fortnightly",
-      "cron": "0 8 * * 1",
+      "cron": "40 15 * * 1",
       "layer": "L5",
       "depends_on": [
         "competitive-intelligence-routine",
@@ -465,7 +470,7 @@
     },
     "tooling--mcp-discovery-routine": {
       "cadence": "weekly",
-      "cron": "0 21 * * 2",
+      "cron": "35 18 * * 2",
       "layer": "L4",
       "depends_on": [
         "frontier-architecture-routine"
@@ -478,7 +483,7 @@
     },
     "fleet-health-routine": {
       "cadence": "daily",
-      "cron": "45 9 * * *",
+      "cron": "25 17 * * *",
       "layer": "L5",
       "depends_on": [],
       "required_inputs": [
@@ -487,7 +492,18 @@
       ],
       "produces": "D:\\reports\\daily\\fleet-health-{date}.md",
       "id_prefix": null,
-      "note": "runs LAST in the morning window; observability beacon, read-only over exit log + validation log"
+      "note": "runs LAST in the main block (after r11), before the continuity tail - same relative position it held in v1; observability beacon, read-only over exit log + validation log"
     }
+  },
+  "non_fleet_tasks": {
+    "_note": "Live scheduled tasks not owned by the fleet DAG but moved into the window in v2 so they stop dying on the closed-app problem. Cadence for these is NOT otherwise stored durably - see the scheduler-registry-wipe memory.",
+    "_produces_note": "produces added 2026-07-31 so fleet-health can dormancy-check these (was FH-45). Each path is taken from the task's own SKILL.md, not its description. produces_verified=true means an artifact matching the template was found on disk; false means the routine is CONTRACTED to write it but has never been observed doing so - treat a miss as 'unproven path OR dormant', not as confirmed dormancy, until the first artifact appears. produces=null means the task emits to the session only by design and CANNOT be dormancy-checked by file existence; do not invent a path for these. {isoweek} = ISO year-week, e.g. 2026-W31.",
+    "career-job-scan": { "cadence": "daily", "cron": "5 15 * * *", "produces": "D:\\career\\scan-log\\{date}.md", "produces_verified": false, "produces_note": "SKILL.md step writes D:\\career\\scan-log\\YYYY-MM-DD.md; that directory does not exist yet. Side-effect artifact D:\\career\\pipeline.md (undated) is the only observed output, last written 2026-07-20." },
+    "career-market-intel": { "cadence": "weekly", "cron": "10 15 * * 1", "produces": "D:\\career\\intel\\{isoweek}.md", "produces_verified": false, "produces_note": "SKILL.md job 3 writes D:\\career\\intel\\YYYY-'W'ww.md (ISO week, NOT date). Directory does not exist yet." },
+    "pillarworks-eod-reality-update": { "cadence": "daily", "cron": "35 17 * * *", "produces": "D:\\pillarworks-build-mvp\\docs\\audits\\REALITY_UPDATE_{date}.md", "produces_verified": false, "produces_note": "Repo-scoped writer: lands on main via a self-merged docs-only PR, so the local working tree can legitimately lag behind main. Check origin/main before calling it dormant. docs\\audits exists with 7 other files but no REALITY_UPDATE_* yet." },
+    "briefing-writer-routine": { "cadence": "daily", "cron": "45 17 * * *", "produces": "D:\\reports\\evolution\\command-briefing-{date}.md", "produces_verified": true },
+    "orryx-command-triage": { "cadence": "daily", "cron": "55 17 * * *", "produces": "D:\\state\\founder-decision-pack-{date}.md", "produces_verified": true, "produces_note": "Also maintains D:\\state\\sprints\\orryx-command-sprint-{date}.md, but that file is week-rolling (updated in place on later days), so it would false-DORMANT - the decision pack is the per-run signal. Last observed 2026-07-15." },
+    "pillarworks-m3-qs-benchmark-tracker": { "cadence": "weekly", "cron": "10 15 * * 3", "produces": null, "produces_note": "By design: SKILL.md step 5 says 'Surface the note to the user as the run output. Keep it crisp; this is a nudge, not a report.' No file is written. Not dormancy-checkable by file existence - use the exit log only." },
+    "review-user-labelling": { "cadence": "weekly", "cron": "40 16 * * 1", "produces": null, "produces_note": "By design: reports counts/patterns to the session and stops. No file is written. Also expected to return a nil result while there are no production users (as at 2026-07-28), which is NOT a failure. Not dormancy-checkable by file existence - use the exit log only." }
   }
 }
