@@ -155,6 +155,20 @@ As the LAST step, append ONE line to `D:\reports\evolution\fleet-exit-log.jsonl`
 {"routine_id":"<id>","run_id":"<ISO-utc>","exit_status":"OK|SKIP|ABORT|FAIL","input_freshness":"FRESH|DEGRADE|ABORT|NA","output_produced_at":"<ISO-utc-or-null>","catch_up":false,"skip_reason":null,"consecutive_failures":0}
 ```
 
+- **`run_id` and `output_produced_at` MUST come from a clock read taken as you
+  write this row, verified from two independent sources** (e.g. PowerShell
+  `(Get-Date).ToUniversalTime()` and `python -c "datetime.now(timezone.utc)"`).
+  This is the same two-source check ESC-018 already requires before dating a
+  report — §4 simply never extended it to the exit row. If the two sources
+  disagree, stop and resolve the skew; do not pick one.
+  **Never synthesise `run_id`** from the scheduled fire slot, a rounded hour, or
+  the previous run's value — a slot-derived `run_id` is indistinguishable from a
+  real one downstream and can sit hours from the work it labels.
+  **Sanity check before appending:** `run_id` must be within minutes of your
+  artifact's on-disk mtime. If it is not, your clock or your source is wrong —
+  fix it before writing, do not write the row and note the discrepancy.
+  *(HP-23, 2026-07-31: a row logged `run_id 2026-07-31T02:20:00Z` for an artifact
+  whose mtime was `2026-07-30T22:38:53Z` — 3h42m ahead of the work it described.)*
 - `routine_id` MUST equal the scheduled-task directory name (e.g.
   `innovation-backlog-routine`, never a short form like `innovation-backlog`).
   Consumers (`fleet-health-routine`) treat known historical aliases

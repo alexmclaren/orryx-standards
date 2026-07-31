@@ -66,11 +66,58 @@ Only flag a routine as DORMANT if it was **expected today**:
 Compute today's weekday/date and filter the expected set accordingly before
 declaring anything dormant. A false DORMANT alarm trains the operator to ignore you.
 
+## Date basis — do not misread a basis mismatch as a producer outage
+
+**`{date}` is the LOCAL date** — `Australia/Brisbane`, UTC+10, no DST. Timestamps
+(`run_id`, `output_produced_at`, `generated_utc`) stay UTC ISO-8601 with `Z`.
+Canonical rule and rationale: `_shared/PRODUCER_PRECHECK.md` §1.
+
+You do **not** run the producer pre-check — your inputs (`fleet-exit-log.jsonl`,
+`fleet-expectations.json`) are undated, so nothing here gates your own run. You
+need this for a different reason: **you are the routine that adjudicates every
+`PRODUCER_NOT_YET_FIRED`, and a date-basis mismatch manufactures that exact
+signal from a producer that ran perfectly.**
+
+Local is UTC+10, so between **14:00Z and 24:00Z** (00:00–10:00 local) the local
+and UTC dates name different days. A producer that labels its output on the UTC
+basis in that window writes a file its consumers cannot glob. The consumer
+re-globs, correctly finds nothing, and emits a well-formed
+`PRODUCER_NOT_YET_FIRED` — while the input sits on disk under the adjacent
+day's name.
+
+**Diagnostic — run this before classifying any `PRODUCER_NOT_YET_FIRED`:**
+
+1. Note the SKIP's `run_id`. If its **local** time falls in 00:00–10:00, the
+   basis-mismatch case is live; outside that window it cannot apply.
+2. Stat the producer's output under **both** `{local-date}` and
+   `{local-date − 1}`.
+3. If the adjacent-date file exists **and its mtime falls within the current
+   local day**, the producer DID run. Classify the row as
+   **🟠 `SKIP — date-basis mismatch (producer ran under the adjacent label)`**,
+   name both routines, and report it under *"Did NOT emit today (expected —
+   investigate)"*. It is a fault.
+4. Only if neither label exists is it a genuine ordering race or outage.
+
+**Never file a basis-mismatch SKIP under "Skips (healthy — informational)."**
+The consumer is healthy; the fleet is not. Counting it as healthy is how the
+fault stays invisible — a false "producer late" classification trains the
+operator to ignore you exactly as a false DORMANT does.
+
+*Worked example — 2026-07-31, two instances in one morning.* `repo-scanner`
+produced at 07:54 local but labelled it `portfolio-summary-2026-07-30-verification.md`
+(UTC basis). `documentation-sync` skipped at 07:46 and `security-routine` at
+08:32, both citing `portfolio-summary-2026-07-31.md` absent, both having
+re-globbed twice with mtimes recorded, both fully contract-compliant. Both lost
+the run until `repo-scanner` re-emitted under the LOCAL label at 09:10. That
+day's fleet-health report recorded both at face value and diagnosed neither.
+
 ## Tasks
 
 1. Build today's **expected set** from the registry, filtered by cadence/day.
 2. For each expected routine, determine ACTUAL status from exit-log + file existence:
    `OK` / `SKIP (reason)` / `ABORT` / `FAIL` / `DORMANT (no emission, last seen {date})`.
+   2a. For every `PRODUCER_NOT_YET_FIRED` row, apply the **Date basis** diagnostic
+   above before accepting it. A basis mismatch is a 🟠 fault row, not a healthy skip.
 3. Cross-reference handoff-validation: list any contracted routine FAILing the
    validator today (reason codes + attempt count).
 4. Read breaker state: list any `tripped:true` routine.
