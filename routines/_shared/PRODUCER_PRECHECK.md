@@ -19,6 +19,36 @@ pre-checks close that gap. **Skip is always better than stale.**
 
 ## 1. Producer pre-check (run FIRST, before any work)
 
+> **`{date}` BASIS — DECLARED, NON-OPTIONAL (DOC-36, declared 2026-07-31).**
+> Every `{date}` / `{today}` in a **filename, report heading, or glob** is the
+> **LOCAL date** — `Australia/Brisbane`, **UTC+10, no DST** (so the offset is
+> constant year-round). It is NOT the UTC date.
+>
+> Every **timestamp** — `run_id`, `output_produced_at`, `scan_completed_utc`,
+> exit-log rows — stays **UTC ISO-8601 with `Z`**. Date labels are local,
+> timestamps are UTC; they are different fields and neither substitutes for the
+> other. Deriving a date label by truncating a UTC timestamp is the bug.
+>
+> **Why it is not cosmetic.** Local is UTC+10, so from **14:00Z to 24:00Z**
+> (00:00–10:00 local) the two bases name different days. A routine labelling on
+> the wrong basis writes an artifact its own consumers cannot glob; they read the
+> producer as dark and emit a well-formed, contract-compliant SKIP while the
+> input sits on disk under the adjacent day's name. Observed live:
+> `documentation-sync` SKIPped at 2026-07-30T21:46Z, six minutes before
+> `repo-scanner` produced the input it needed under the UTC label.
+>
+> **Stamp it.** Every dated artifact carries `date_basis: LOCAL (UTC+10)` in its
+> header block, beside the clock-verification line.
+>
+> **Transition rule — glob BOTH bases until the corpus is uniform.** Artifacts
+> written before 2026-07-31 use both (~854 local / ~34 UTC as measured
+> 2026-07-31). Before committing `PRODUCER_NOT_YET_FIRED` or any "not produced
+> today" SKIP, glob the producer under **both** `{local-date}` **and**
+> `{local-date − 1}`. If the older label was written during the current local
+> day, it IS today's artifact — consume it, and record the basis mismatch as a
+> finding rather than skipping. Never commit such a SKIP without having globbed
+> both. This rule composes with — does not replace — step 2a below.
+
 For each entry in your `required_inputs` (from routine-schedule.json):
 
 1. Stat the expected same-day file (e.g. `D:\reports\security\security-review-{today}.md`).
