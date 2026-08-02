@@ -48,7 +48,7 @@
       "required_inputs": [],
       "produces": "D:\\reports\\evolution\\competitive-intelligence-{date}.md",
       "id_prefix": "CI",
-      "note": "weekly->fortnightly 2026-07-03 peak-period trim; ISO-even-week gate in prompt; review 2026-07-31"
+      "note": "weekly->fortnightly 2026-07-03 peak-period trim; ISO-even-week gate in prompt. 2026-08-02: the trim ENDED for deep-research + tooling--mcp-discovery (both re-enabled) but competitive-intelligence DELIBERATELY STAYS fortnightly - it is running fine on that cadence (last emission 08-01) and returning it to weekly was not adopted. This is a deliberate divergence from 'the trim ended', not drift; do not 'restore' it to weekly on the assumption it was overlooked."
     },
     "deep-research-routine": {
       "cadence": "weekly",
@@ -58,8 +58,7 @@
       "required_inputs": [],
       "produces": "D:\\reports\\evolution\\deep-research-{date}.md",
       "id_prefix": "DR",
-      "paused_until": "2026-07-31",
-      "note": "peak-period trim; consumers (frontier, innovation-backlog) run on freshness-gated stale input meanwhile"
+      "note": "peak-period trim 2026-07-03 ENDED 2026-08-02 - paused_until expired 07-31 and the live task was re-enabled; consumers (frontier, innovation-backlog) had been running on freshness-gated stale input meanwhile"
     },
     "dependency-graph-builder": {
       "cadence": "weekly",
@@ -121,7 +120,8 @@
       "required_inputs": [],
       "produces": "D:\\reports\\harness\\harness-propagation-{date}.md",
       "id_prefix": "HP",
-      "condition": "NO_CHANGE skip if CLAUDE.base.md/commands unchanged since last run"
+      "condition": "NO_CHANGE skip if CLAUDE.base.md/commands unchanged since last run",
+      "note": "The NO_CHANGE skip applies ONLY to harness-file propagation (steps 1-3). Steps 3b (prompt snapshot), 3c (pre-check mirror re-sync) and 3d (stale scheduled-task session sweep, added 2026-08-01) run EVERY run regardless. 3d owns session hygiene because git-hygiene-routine is contractually read-only; the keep-newest-per-task rule must never archive a task's newest session (that promotes the next zombie down)."
     },
     "qa-routine": {
       "cadence": "daily",
@@ -169,6 +169,7 @@
       "soft_inputs": [
         "security-review"
       ],
+      "produces": "D:\\reports\\architecture\\cto-review-{date}.md",
       "soft_input_note": "2026-07-31: security-review demoted from hard required_input to SOFT-with-DEGRADE. As a hard AND-leg it dark-dayed a 9-of-10-fresh spine on 2026-07-31 while a 1d-old, entirely usable security baseline sat on disk. Absent same-day security-review, cto-routine now carries the newest on-disk baseline age-tiered through the Input Freshness Gate (<=2d FRESH, 2-7d DEGRADE cap HIGH, >7d ABORT = no security-axis escalations) instead of skipping. depends_on intentionally still lists security-routine for DAG ordering.",
       "id_prefix": "ESC"
     },
@@ -472,7 +473,7 @@
     },
     "tooling--mcp-discovery-routine": {
       "cadence": "weekly",
-      "cron": "35 18 * * 2",
+      "cron": "0 14 * * 2",
       "layer": "L4",
       "depends_on": [
         "frontier-architecture-routine"
@@ -480,8 +481,7 @@
       "required_inputs": [],
       "produces": "D:\\reports\\evolution\\tooling-mcp-discovery-{date}.md",
       "id_prefix": "TL",
-      "paused_until": "2026-07-31",
-      "note": "peak-period trim 2026-07-03"
+      "note": "peak-period trim 2026-07-03 ENDED 2026-08-02 - paused_until expired 07-31 and the live task was re-enabled. SLOT MOVED Tue 18:35 -> Tue 14:00 at the same time: 18:35 sits in the tail the dispatcher never drains to, so re-enabling it there would have been a hollow fix. No dependency is violated - frontier-architecture is fortnightly Sunday, days earlier."
     },
     "fleet-health-routine": {
       "cadence": "daily",
@@ -494,7 +494,8 @@
       ],
       "produces": "D:\\reports\\daily\\fleet-health-{date}.md",
       "id_prefix": null,
-      "note": "runs LAST in the main block (after r11), before the continuity tail - same relative position it held in v1; observability beacon, read-only over exit log + validation log"
+      "also_produces": "D:\\reports\\evolution\\command-briefing-{date}.md",
+      "note": "runs LAST in the main block (after r11), before the continuity tail - same relative position it held in v1; observability beacon, read-only over exit log + validation log. 2026-08-02: ABSORBED briefing-writer-routine as a second emission (also_produces). That task was registered 2026-07-23 and never executed once - its 17:45 slot sat 2nd-last in a block the dispatcher never drains to, so the dashboard Command tab ran on deterministic fallback for 11 days. Folding beat relocating: fleet-health reliably runs and already holds most of the briefing's inputs by step 8. Do NOT re-register briefing-writer as a standalone task."
     }
   },
   "non_fleet_tasks": {
@@ -503,8 +504,7 @@
     "career-job-scan": { "cadence": "daily", "cron": "5 15 * * *", "produces": "D:\\career\\scan-log\\{date}.md", "produces_verified": false, "produces_note": "SKILL.md step writes D:\\career\\scan-log\\YYYY-MM-DD.md; that directory does not exist yet. Side-effect artifact D:\\career\\pipeline.md (undated) is the only observed output, last written 2026-07-20." },
     "career-market-intel": { "cadence": "weekly", "cron": "10 15 * * 1", "produces": "D:\\career\\intel\\{isoweek}.md", "produces_verified": false, "produces_note": "SKILL.md job 3 writes D:\\career\\intel\\YYYY-'W'ww.md (ISO week, NOT date). Directory does not exist yet." },
     "pillarworks-eod-reality-update": { "cadence": "daily", "cron": "35 17 * * *", "produces": "D:\\pillarworks-build-mvp\\docs\\audits\\REALITY_UPDATE_{date}.md", "produces_verified": false, "produces_note": "Repo-scoped writer: lands on main via a self-merged docs-only PR, so the local working tree can legitimately lag behind main. Check origin/main before calling it dormant. docs\\audits exists with 7 other files but no REALITY_UPDATE_* yet." },
-    "briefing-writer-routine": { "cadence": "daily", "cron": "45 17 * * *", "produces": "D:\\reports\\evolution\\command-briefing-{date}.md", "produces_verified": true },
-    "orryx-command-triage": { "cadence": "daily", "cron": "55 17 * * *", "produces": "D:\\state\\founder-decision-pack-{date}.md", "produces_verified": true, "produces_note": "Also maintains D:\\state\\sprints\\orryx-command-sprint-{date}.md, but that file is week-rolling (updated in place on later days), so it would false-DORMANT - the decision pack is the per-run signal. Last observed 2026-07-15." },
+    "orryx-command-triage": { "cadence": "daily", "cron": "10 13 * * *", "produces": "D:\\state\\founder-decision-pack-{date}.md", "produces_verified": true, "produces_note": "Also maintains D:\\state\\sprints\\orryx-command-sprint-{date}.md, but that file is week-rolling (updated in place on later days), so it would false-DORMANT - the decision pack is the per-run signal. Last observed 2026-07-15.", "slot_note": "SLOT MOVED 17:55 -> 13:10 on 2026-08-02. It had never launched once since the 07-23 rebuild (18d, zero sessions in the session store). Unlike briefing-writer this has no natural host to fold into, and it has NO dependency on the daily routine cohort - it reads the dashboard snapshot only - so it can run early. CAVEAT, stated not hidden: slot position is NOT a proven cause. career-job-scan sits at 15:05, well inside the drained band, and has also never launched, so something beyond slot order distinguishes non-fleet tasks. Treat this as a hypothesis under test; fleet-health adjudicates it daily." },
     "pillarworks-m3-qs-benchmark-tracker": { "cadence": "weekly", "cron": "10 15 * * 3", "produces": null, "produces_note": "By design: SKILL.md step 5 says 'Surface the note to the user as the run output. Keep it crisp; this is a nudge, not a report.' No file is written. Not dormancy-checkable by file existence - use the exit log only." },
     "review-user-labelling": { "cadence": "weekly", "cron": "40 16 * * 1", "produces": null, "produces_note": "By design: reports counts/patterns to the session and stops. No file is written. Also expected to return a nil result while there are no production users (as at 2026-07-28), which is NOT a failure. Not dormancy-checkable by file existence - use the exit log only." }
   }

@@ -1,0 +1,185 @@
+{
+  "_meta": {
+    "purpose": "Expected-run registry for the fleet-health-routine. Lists what SHOULD run at each cadence and where it writes, so the beacon can compute 'did NOT emit today' (dormant-routine detection — the git-hygiene-dormant + 3-week-dark-producer failure classes). Keep in sync with D:\\orryx-standards\\routines\\routine-schedule.json.",
+    "version": 2,
+    "created": "2026-06-28",
+    "revised": "2026-08-02",
+    "derives_from": "D:\\orryx-standards\\routines\\routine-schedule.json",
+    "weekday_map": "0=Sun 1=Mon 2=Tue 3=Wed 4=Thu 5=Fri 6=Sat",
+    "v2_change": "Added the 7 non-fleet scheduled tasks that were live but invisible to dormancy detection (FH-45), sourced from routine-schedule.json non_fleet_tasks. They sit in the normal daily/weekly buckets so existing cadence filtering picks them up unchanged.",
+    "out_verified": "true = an artifact matching the {out} template was found on disk, so a miss is real evidence of dormancy. false = the routine is CONTRACTED by its SKILL.md to write this path but has never been observed doing so; report a miss as 'unproven path OR dormant', NEVER as confirmed dormancy, until the first artifact appears. Absent field = treat as true (all v1 entries were verified in use).",
+    "out_null": "out:null means the task emits to the session only BY DESIGN and cannot be dormancy-checked by file existence - fall back to the exit log alone and never emit a DORMANT row for it. Do not invent a path for these; a fabricated template produces a false DORMANT every cycle forever.",
+    "template_tokens": "{date} = YYYY-MM-DD. {ym} = YYYY-MM. {isoweek} = ISO year-week, e.g. 2026-W31.",
+    "v3_change": "briefing-writer-routine removed as a standalone expectation and folded into fleet-health-routine as also_out; peak-period pause cleared for deep-research + tooling--mcp-discovery."
+  },
+  "daily": {
+    "repo-scanner": {
+      "out": "D:\\reports\\repo-health\\portfolio-summary-{date}.md"
+    },
+    "security-routine": {
+      "out": "D:\\reports\\security\\security-review-{date}.md"
+    },
+    "git-hygiene-routine": {
+      "out": "D:\\reports\\git-recovery\\git-hygiene-{date}.md"
+    },
+    "qa-routine": {
+      "out": "D:\\reports\\qa\\qa-summary-{date}.md"
+    },
+    "devops-routine": {
+      "out": "D:\\reports\\devops\\devops-summary-{date}.md"
+    },
+    "cto-routine": {
+      "out": "D:\\reports\\architecture\\cto-review-{date}.md"
+    },
+    "secret-rotation-tracker": {
+      "out": "D:\\reports\\security\\secret-rotation-{date}.md"
+    },
+    "ceo-routine": {
+      "out": "D:\\reports\\daily\\ceo-summary-{date}.md"
+    },
+    "daily-planner-routine": {
+      "out": "D:\\reports\\daily\\daily-plan-{date}.md"
+    },
+    "approval-governance-routine": {
+      "out": "D:\\reports\\approvals\\approval-summary-{date}.md"
+    },
+    "execution-safety-routine": {
+      "out": "D:\\reports\\daily\\execution-safety-{date}.md"
+    },
+    "engineering-routine": {
+      "out": "D:\\reports\\daily\\engineering-{date}.md",
+      "may_skip": "NO_CHANGE on no-commit days"
+    },
+    "r11-safe-resolver": {
+      "out": "D:\\reports\\r11\\r11-safe-resolver-{date}.md",
+      "may_skip": "queue empty or HALT"
+    },
+    "failure-analysis-routine": {
+      "out": "D:\\reports\\evolution\\failure-analysis-{date}.md"
+    },
+    "end-of-day-distillation-routine": {
+      "out": "D:\\reports\\daily\\eod-summary-{date}.md"
+    },
+    "memory-consolidation-routine": {
+      "out": "D:\\DECISIONS.md",
+      "dated_companion": "D:\\reports\\daily\\memory-consolidation-{date}.md"
+    },
+    "orchestration-routine": {
+      "out": "D:\\reports\\daily\\master-operating-plan-{date}.md"
+    },
+    "fleet-health-routine": {
+      "out": "D:\\reports\\daily\\fleet-health-{date}.md",
+      "self": true,
+      "also_out": "D:\\reports\\evolution\\command-briefing-{date}.md",
+      "also_out_verified": true,
+      "note": "ABSORBED briefing-writer-routine 2026-08-02 (that task was registered 07-23 and never ran once; 17:45 slot sat in the never-drained tail). fleet-health now emits BOTH files - a run that writes one but not the other is a fault, not a clean run."
+    },
+    "orryx-command-triage": {
+      "out": "D:\\state\\founder-decision-pack-{date}.md",
+      "out_verified": true,
+      "note": "Non-fleet task - cron 17:55 AEST. Also maintains D:\\state\\sprints\\orryx-command-sprint-{date}.md, but that file is week-rolling (updated in place on later days) so it would false-DORMANT; the decision pack is the per-run signal. Last observed 2026-07-15."
+    },
+    "career-job-scan": {
+      "out": "D:\\career\\scan-log\\{date}.md",
+      "out_verified": false,
+      "note": "Non-fleet task - cron 15:05 AEST. SKILL.md contracts this dated path but D:\\career\\scan-log\\ does not exist yet. Only observed output is the undated D:\\career\\pipeline.md (last written 2026-07-20)."
+    },
+    "pillarworks-eod-reality-update": {
+      "out": "D:\\pillarworks-build-mvp\\docs\\audits\\REALITY_UPDATE_{date}.md",
+      "out_verified": false,
+      "note": "Non-fleet task - cron 17:35 AEST. Repo-scoped writer: lands on main via a self-merged docs-only PR, so the LOCAL working tree can legitimately lag. Check origin/main before calling it dormant - a local stat alone is not evidence."
+    }
+  },
+  "condition": {
+    "documentation-sync": {
+      "out": "D:\\reports\\daily\\documentation-sync-{date}.md",
+      "may_skip": "NO_CHANGE if no commits to main"
+    },
+    "harness-propagation-routine": {
+      "out": "D:\\reports\\harness\\harness-propagation-{date}.md",
+      "may_skip": "NO_CHANGE if harness unchanged"
+    },
+    "release-changelog-routine": {
+      "out": "D:\\reports\\daily\\release-readiness-{date}.md",
+      "may_skip": "NO_CHANGE if no merge to main"
+    }
+  },
+  "weekly": {
+    "dependency-graph-builder": {
+      "day": 1,
+      "out": "D:\\reports\\architecture\\dependency-analysis-{date}.md"
+    },
+    "mvp-delivery-routine": {
+      "day": 1,
+      "out": "D:\\reports\\evolution\\mvp-progress-{date}.md"
+    },
+    "product-routine": {
+      "day": 1,
+      "out": "D:\\reports\\daily\\product-review-{date}.md"
+    },
+    "commercialstrategy-routine": {
+      "day": 3,
+      "out": "D:\\reports\\daily\\commercial-review-{date}.md"
+    },
+    "finops-routine": {
+      "day": 5,
+      "out": "D:\\reports\\finops\\finops-review-{date}.md"
+    },
+    "knowledge-ingestion-routine": {
+      "day": 0,
+      "out": "D:\\reports\\evolution\\knowledge-ingestion-{date}.md"
+    },
+    "prompt-evolution-routine": {
+      "day": 0,
+      "out": "D:\\reports\\evolution\\prompt-evolution-{date}.md"
+    },
+    "career-market-intel": {
+      "day": 1,
+      "out": "D:\\career\\intel\\{isoweek}.md",
+      "out_verified": false,
+      "note": "Non-fleet task - cron Mon 15:10 AEST. Keys on ISO WEEK, not date (SKILL.md writes YYYY-'W'ww.md) - a {date} template will never match. D:\\career\\intel\\ does not exist yet."
+    },
+    "pillarworks-m3-qs-benchmark-tracker": {
+      "day": 3,
+      "out": null,
+      "note": "Non-fleet task - cron Wed 15:10 AEST. Session-only BY DESIGN: SKILL.md step 5 says 'this is a nudge, not a report'. No file is written - never emit a DORMANT row for it; use the exit log only."
+    },
+    "review-user-labelling": {
+      "day": 1,
+      "out": null,
+      "note": "Non-fleet task - cron Mon 16:40 AEST. Session-only BY DESIGN: reports counts/patterns and stops. Also expected to return a nil result while there are no production users (as at 2026-07-28), which is NOT a failure. Use the exit log only."
+    }
+  },
+  "paused": {
+    "_note": "Peak-period trim 2026-07-03 ENDED 2026-08-02: deep-research-routine and tooling--mcp-discovery-routine were re-enabled and moved back to the weekly block. No routine is currently paused. Entries here are scheduler-DISABLED, not dormant - never flag one as DORMANT."
+  },
+  "fortnightly": {
+    "competitive-intelligence-routine": {
+      "day": 6,
+      "out": "D:\\reports\\evolution\\competitive-intelligence-{date}.md",
+      "note": "weekly->fortnightly 2026-07-03; even ISO weeks"
+    },
+    "autonomous-improvement-routine": {
+      "day": 0,
+      "out": "D:\\reports\\evolution\\autonomous-improvement-{date}.md"
+    },
+    "frontier-architecture-routine": {
+      "day": 0,
+      "out": "D:\\reports\\evolution\\frontier-architecture-{date}.md"
+    },
+    "capability-benchmarking-routine": {
+      "day": 1,
+      "out": "D:\\reports\\evolution\\capability-benchmark-{date}.md"
+    },
+    "innovation-backlog-routine": {
+      "day": 1,
+      "out": "D:\\reports\\evolution\\innovation-backlog-{date}.md"
+    }
+  },
+  "monthly": {
+    "fleet-security-audit": {
+      "day_of_month": 1,
+      "out": "D:\\security-audit\\monthly\\{ym}\\REPORT.md"
+    }
+  }
+}
