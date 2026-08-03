@@ -2,10 +2,10 @@ name: mirror-drift
 
 on:
   pull_request:
-    paths: ['routines/**']
+    paths: ['routines/**', 'scripts/check-precheck-mirror.ps1', '.github/workflows/mirror-drift.yml']
   push:
     branches: [main]
-    paths: ['routines/**']
+    paths: ['routines/**', 'scripts/check-precheck-mirror.ps1', '.github/workflows/mirror-drift.yml']
 
 permissions:
   contents: read
