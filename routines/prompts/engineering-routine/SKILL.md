@@ -223,7 +223,25 @@ For each entry in your `required_inputs` (from routine-schedule.json):
      recovered one, never a guaranteed one; (c) if a requeue is observed stalling on
      approvals, say so in the exit record rather than silently re-minting it tomorrow.
      **Do not paper over this by granting broad permissions to a generated task.**
-   - After 2a/2b/2c, if still absent: write the structured exit record (§4) and STOP.
+   - **2d. Producer SKIPped NO_CHANGE ≠ producer dark (quiet-producer starvation,
+     2026-07-16).** Before treating an absent input as a blackout, read the producer's
+     LATEST `fleet-exit-log.jsonl` row. **If it is `SKIP` with `skip_reason` NO_CHANGE**
+     (or PRODUCER_NOT_YET_FIRED that has since resolved to NO_CHANGE upstream), the
+     producer is *quiet, not dark*: it deliberately declined and **reused its prior
+     dated output**, so no `{today}` file will ever appear — SKIP-ing here just chains
+     the quiet forward and starves you on a day whose OTHER inputs may be fresh and
+     analysable. Instead, **consume the producer's most-recent dated file under the
+     freshness gate** (`INPUT_FRESHNESS_GATE.md` DEGRADE/ABORT tiers by age) and
+     proceed. Record `producer_quiet:<name>@<its-last-OK-date>` in your output's
+     Caveats and in the exit-log `skip_reason` field of the row you DO emit (still
+     `OK`, since you did real work on the other inputs). *(Root cause of the
+     2026-07-16 double-starvation: `engineering-routine` SKIPped NO_CHANGE 6+ runs
+     — empty AI-executable queue — so `engineering-{date}.md` never lands; both
+     `failure-analysis` and `memory-consolidation` SKIP-chained behind it while
+     qa/security/devops/approvals reports for the day were FRESH.)* This applies
+     **only** to inputs marked soft/preferred for your routine — a genuinely
+     hard-required input with no valid prior output still SKIPs.
+   - After 2a/2b/2c/2d, if still absent: write the structured exit record (§4) and STOP.
      With 2c done you will re-fire at your real slot today; without it, not until
      tomorrow (or the next catch-up burst).
 3. **If present:** continue to the freshness gate (`INPUT_FRESHNESS_GATE.md`) for
@@ -298,26 +316,41 @@ producer's output is unchanged:
 
 **4. Structured exit record (every routine, every run)**
 
-As the LAST step, append ONE line to `D:\reports\evolution\fleet-exit-log.jsonl`:
+As the LAST step, append ONE line to `D:\reports\evolution\fleet-exit-log.jsonl`.
 
-```json
-{"routine_id":"<id>","run_id":"<ISO-utc>","exit_status":"OK|SKIP|ABORT|FAIL","input_freshness":"FRESH|DEGRADE|ABORT|NA","output_produced_at":"<ISO-utc-or-null>","catch_up":false,"skip_reason":null,"consecutive_failures":0}
+**Use the shared writer. Do NOT hand-build this JSON inside a shell-quoted
+command** (`python -c "..."`, `pwsh -Command "..."`). The writer takes the row as
+*arguments*, so values never cross a second escaping layer:
+
+```
+pwsh -NoProfile -File C:\Users\alexa\.claude\scheduled-tasks\_shared\append-exit-row.ps1 `
+  -RoutineId <id> -ExitStatus OK|SKIP|ABORT|FAIL -InputFreshness FRESH|DEGRADE|ABORT|NA `
+  [-OutputFile <artifact-path>] [-SkipReason '<text>'] [-CatchUp] [-MissedDays N] [-Note '<text>']
 ```
 
-- **`run_id` and `output_produced_at` MUST come from a clock read taken as you
-  write this row, verified from two independent sources** (e.g. PowerShell
-  `(Get-Date).ToUniversalTime()` and `python -c "datetime.now(timezone.utc)"`).
-  This is the same two-source check ESC-018 already requires before dating a
-  report — §4 simply never extended it to the exit row. If the two sources
-  disagree, stop and resolve the skew; do not pick one.
+It emits exactly the contracted shape:
+
+```json
+{"routine_id":"<id>","run_id":"<ISO-utc>","exit_status":"OK|SKIP|ABORT|FAIL","input_freshness":"FRESH|DEGRADE|ABORT|NA","output_produced_at":"<ISO-utc-or-null>","catch_up":false,"missed_days":0,"skip_reason":null,"consecutive_failures":0}
+```
+
+- The writer discharges the clock rules mechanically, so do not re-implement them:
+  it stamps `run_id` from the system clock cross-checked against python (§4 wants
+  **two independent sources** — note that two reads taken inside the *same* shell
+  are one source, not two), derives `output_produced_at` from `-OutputFile`'s real
+  on-disk mtime, and **refuses to write** when `run_id` sits more than
+  `-MaxSkewMinutes` (default 10) from that mtime.
   **Never synthesise `run_id`** from the scheduled fire slot, a rounded hour, or
   the previous run's value — a slot-derived `run_id` is indistinguishable from a
   real one downstream and can sit hours from the work it labels.
-  **Sanity check before appending:** `run_id` must be within minutes of your
-  artifact's on-disk mtime. If it is not, your clock or your source is wrong —
-  fix it before writing, do not write the row and note the discrepancy.
   *(HP-23, 2026-07-31: a row logged `run_id 2026-07-31T02:20:00Z` for an artifact
   whose mtime was `2026-07-30T22:38:53Z` — 3h42m ahead of the work it described.)*
+- *Why the writer exists — 2026-08-01, ceo-routine:* a row hand-built inside a
+  shell-quoted `python -c` stored `D:\reports\security` as `D:eports\security`
+  (the `\r` was eaten as a carriage return) and `§` as `U+FFFD`. A corrupted
+  `skip_reason` is worse than a missing one — `fleet-health-routine` parses these
+  rows, so a mangled path reads as a routine that checked somewhere it did not.
+  Verify the fix any time with `append-exit-row.ps1 -SelfTest`.
 - `routine_id` MUST equal the scheduled-task directory name (e.g.
   `innovation-backlog-routine`, never a short form like `innovation-backlog`).
   Consumers (`fleet-health-routine`) treat known historical aliases
