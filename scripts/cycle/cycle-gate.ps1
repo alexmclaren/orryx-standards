@@ -151,14 +151,28 @@ $script:IrreversibleContentRules = [ordered]@{
   secret_material = @{
     pattern = '(?m)^\+.*(ghp_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|(?i)(api[_-]?key|secret|token|password)\s*[:=]\s*["''][^"''$\{\s]{16,}["''])'
     why     = 'Added lines contain what looks like real credential material. Disclosure cannot be undone by a revert - the credential is already exposed and must be rotated.'
+    # Applies to ANY file: a committed credential is exposed wherever it sits.
+    # In a test/detector file it downgrades to elevated so a reviewer can confirm
+    # it is a fixture, rather than the gate ignoring it or blocking forever.
+    appliesTo               = $null
+    downgradeInNonExecuting = $true
+    requires                = @('no_secret_material', 'full_diff_reviewed')
   }
   destroy_protection_removed = @{
     pattern = '(?m)^-.*(deletion_protection\s*=\s*true|prevent_destroy\s*=\s*true|skip_final_snapshot\s*=\s*false)|(?m)^\+.*(deletion_protection\s*=\s*false|prevent_destroy\s*=\s*false|force_destroy\s*=\s*true|skip_final_snapshot\s*=\s*true)'
     why     = 'The diff removes a guard that exists to prevent irreversible destruction of a stateful resource.'
+    # Only IaC can actually remove a real guard. The same words in a test are inert.
+    appliesTo               = '\.tf$|\.tfvars$|(^|/)terraform/'
+    downgradeInNonExecuting = $false
+    requires                = @('deployment_impact', 'rollback_verified')
   }
   destructive_sql = @{
     pattern = '(?mi)^\+.*\b(DROP\s+(TABLE|DATABASE|SCHEMA|COLUMN)|TRUNCATE\s+TABLE|DELETE\s+FROM\s+\w+\s*;)'
     why     = 'Added SQL destroys data. If anything runs this migration, the loss is not recoverable by revert.'
+    # Only a .sql file or a migration can be executed by a migration runner.
+    appliesTo               = '\.sql$|(^|/)(migrations?|alembic)/'
+    downgradeInNonExecuting = $false
+    requires                = @('migration_reversibility', 'deployment_impact')
   }
 }
 
@@ -191,16 +205,75 @@ function Get-RiskFlags {
   return $flags
 }
 
+# Files that describe or test an operation but cannot perform it. A Test-*.ps1
+# fixture containing the string "DROP TABLE" cannot drop a table, and the gate's
+# own rule definitions necessarily contain every pattern it detects.
+#
+# Found 2026-08-08 by running the gate on PR #24, which adds this very file: it
+# flagged secret_material + destroy_protection_removed + destructive_sql and
+# classified the harness itself as human-only-irreversible. Generalised, ANY PR
+# adding a security test fixture or a detection rule would be permanently
+# misclassified — which would block exactly the security tooling worth automating.
+$script:NonExecutingPathPattern = '(^|/)(Test-[^/]+\.ps1|[^/]*[._-]test\.[a-z]+|[^/]*_test\.[a-z]+)$|(^|/)(tests?|__tests__|fixtures|testdata)/|(^|/)scripts/cycle/cycle-gate\.ps1$'
+
 function Get-IrreversibleSignals {
-  # Reads the diff PATCH. Absent patch => cannot clear these, so the caller
-  # treats that as unverified rather than clean.
+  <#
+    Reads the diff PATCH, PER FILE, and attributes each signal only to files that
+    could actually perform the operation. Absent patch => the caller treats that as
+    unverified rather than clean.
+
+    Returns objects with a `tier`:
+      human_only - the hit is in a file that can execute the consequence
+      elevated   - the hit is confined to non-executing (test/detector) files, so
+                   it needs `no_secret_material` evidence rather than a human
+
+    Note the asymmetry, which is deliberate:
+      destructive_sql / destroy_protection_removed are scoped to the file types
+      that can actually run (.sql, migrations, .tf) — a description of a DROP in a
+      PowerShell test is inert.
+      secret_material is NOT scoped away entirely, because a committed credential
+      is exposed regardless of the file it sits in. In a non-executing file it is
+      DOWNGRADED to elevated (a reviewer confirms the material is a fixture, not a
+      live key) rather than ignored.
+  #>
   param([string]$Patch)
   $sigs = @()
   if ([string]::IsNullOrWhiteSpace($Patch)) { return $sigs }
-  foreach ($name in $script:IrreversibleContentRules.Keys) {
-    $rule = $script:IrreversibleContentRules[$name]
-    if ($Patch -match $rule.pattern) {
-      $sigs += [pscustomobject]@{ signal = $name; why = $rule.why }
+
+  # Split the unified diff into per-file sections so a hit can be attributed.
+  $sections = [regex]::Split($Patch, '(?m)^diff --git ') | Where-Object { $_ -match '\S' }
+  foreach ($sec in $sections) {
+    $path = ''
+    if ($sec -match '(?m)^\+\+\+ b/(.+)$') { $path = $Matches[1].Trim() }
+    elseif ($sec -match '^a/(\S+)\s+b/(\S+)') { $path = $Matches[2].Trim() }
+    $nonExecuting = ($path -match $script:NonExecutingPathPattern)
+
+    foreach ($name in $script:IrreversibleContentRules.Keys) {
+      $rule = $script:IrreversibleContentRules[$name]
+      if ($sec -notmatch $rule.pattern) { continue }
+
+      # Scope the execution-dependent rules to file types that can actually run —
+      # but ONLY when the path is known. An unattributable hunk must fail closed:
+      # if we cannot tell which file a DROP TABLE landed in, we assume it can run.
+      if ($rule.appliesTo -and $path -and $path -notmatch $rule.appliesTo) { continue }
+      if ($rule.appliesTo -and -not $path) {
+        $sigs += [pscustomobject]@{
+          signal = $name; tier = 'human_only'; path = '(unattributable)'
+          why = "$($rule.why) The diff hunk could not be attributed to a file, so it cannot be ruled inert."
+          requires = @($rule.requires)
+        }
+        continue
+      }
+
+      $tier = if ($nonExecuting -and $rule.downgradeInNonExecuting) { 'elevated' } `
+              elseif ($nonExecuting -and -not $rule.appliesTo) { 'elevated' } `
+              else { 'human_only' }
+
+      $sigs += [pscustomobject]@{
+        signal = $name; tier = $tier; path = $path
+        why = $rule.why
+        requires = @($rule.requires)
+      }
     }
   }
   return $sigs
@@ -423,8 +496,21 @@ $patch = [string](Prop $prState 'patch' '')
 # @() is load-bearing: an empty array returned from a function unrolls to $null,
 # and under StrictMode $null.Count throws.
 $irrev = @(Get-IrreversibleSignals -Patch $patch)
-foreach ($s in $irrev) {
-  Deny 'HUMAN_ONLY_ACTION' "$($s.signal): $($s.why)"
+$irrevHumanOnly = @($irrev | Where-Object { $_.tier -eq 'human_only' })
+foreach ($s in $irrevHumanOnly) {
+  Deny 'HUMAN_ONLY_ACTION' "$($s.signal) in $($s.path): $($s.why)"
+}
+# Downgraded hits (confined to non-executing test/detector files) still demand
+# evidence — a reviewer confirms the material is a fixture, not a live credential.
+foreach ($s in @($irrev | Where-Object { $_.tier -eq 'elevated' })) {
+  foreach ($req in $s.requires) {
+    if (-not (HasEvidence $req)) {
+      Deny 'ELEVATED_EVIDENCE_MISSING' "$($s.signal) matched in non-executing file $($s.path); requires review evidence '$req' to confirm it is a fixture and not live material."
+    }
+  }
+  if ($reviewDepth -cne 'elevated') {
+    Deny 'ELEVATED_REVIEW_REQUIRED' "$($s.signal) matched in $($s.path); requires review_depth='elevated'."
+  }
 }
 
 # C6b — path-derived tiers.
@@ -580,7 +666,7 @@ $out = [pscustomobject]@{
   files_changed   = [int]$files.Count
   additions       = [int]$additions
   risk_flags      = $riskFlagNames
-  risk_tier       = [string]$(if ($irrev.Count -gt 0) { 'human_only' } elseif ($elevatedNeeded.Count -gt 0 -or $scopeElevated) { 'elevated' } else { 'ordinary' })
+  risk_tier       = [string]$(if ($irrevHumanOnly.Count -gt 0) { 'human_only' } elseif ($elevatedNeeded.Count -gt 0 -or $scopeElevated -or $irrev.Count -gt 0) { 'elevated' } else { 'ordinary' })
   elevated_for    = @($elevatedNeeded)
   scope_elevated  = [bool]$scopeElevated
   review_depth    = [string]$reviewDepth

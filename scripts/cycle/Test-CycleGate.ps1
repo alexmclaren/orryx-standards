@@ -457,14 +457,21 @@ Check 'ABSOLUTE: destructive SQL in the diff is human-only even with full eviden
   Write-Review -Repo 'acme/unprotected' -Pr 210 -Depth 'elevated' -Evidence $ALL_EVIDENCE
   $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 210 -State (New-PrState @{
     files = @(@{ path = 'db/migrations/007.sql' })
-    patch = "diff --git a/db/migrations/007.sql`n+DROP TABLE customers;`n" })
+    patch = "diff --git a/db/migrations/007.sql b/db/migrations/007.sql`n+++ b/db/migrations/007.sql`n+DROP TABLE customers;`n" })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'HUMAN_ONLY_ACTION'
+}
+Check 'ABSOLUTE: an UNATTRIBUTABLE destructive hunk fails closed as human-only' {
+  Write-Review -Repo 'acme/unprotected' -Pr 214 -Depth 'elevated' -Evidence $ALL_EVIDENCE
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 214 -State (New-PrState @{
+    files = @(@{ path = 'db/x.sql' })
+    patch = "some malformed patch with no file header`n+DROP TABLE customers;`n" })
   Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'HUMAN_ONLY_ACTION'
 }
 Check 'ABSOLUTE: removing deletion_protection is human-only even with full evidence' {
   Write-Review -Repo 'acme/unprotected' -Pr 211 -Depth 'elevated' -Evidence $ALL_EVIDENCE
   $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 211 -State (New-PrState @{
     files = @(@{ path = 'infra/terraform/rds.tf' })
-    patch = "diff --git a/infra/terraform/rds.tf`n-  deletion_protection = true`n+  deletion_protection = false`n" })
+    patch = "diff --git a/infra/terraform/rds.tf b/infra/terraform/rds.tf`n+++ b/infra/terraform/rds.tf`n-  deletion_protection = true`n+  deletion_protection = false`n" })
   Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'HUMAN_ONLY_ACTION'
 }
 Check 'ABSOLUTE: added credential material is human-only even with full evidence' {
@@ -481,6 +488,62 @@ Check 'PROPORTIONALITY: an ordinary IaC edit (tag rename) is elevated, NOT human
     patch = "diff --git a/infra/terraform/tags.tf`n-  Owner = `"old`"`n+  Owner = `"new`"`n" })
   Assert-Verdict $r 'ALLOW'
   Assert-Equal $r.risk_tier 'elevated' 'risk_tier'
+}
+
+# ---- ATTRIBUTION: a description of an operation is not the operation -------
+# Found live: gating PR #24 (which ADDS the detector) flagged all three
+# irreversible signals and classified the harness itself as human-only. Any PR
+# adding a security fixture or detection rule would be permanently misclassified.
+Check 'ATTRIBUTION: destructive SQL inside a PowerShell TEST file is not human-only' {
+  Write-Review -Repo 'acme/unprotected' -Pr 240 -Depth 'elevated' -Evidence $ALL_EVIDENCE
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 240 -State (New-PrState @{
+    files = @(@{ path = 'scripts/cycle/Test-CycleGate.ps1' })
+    patch = "diff --git a/scripts/cycle/Test-CycleGate.ps1 b/scripts/cycle/Test-CycleGate.ps1`n+++ b/scripts/cycle/Test-CycleGate.ps1`n+    patch = `"+DROP TABLE customers;`"`n" })
+  Assert-Verdict $r 'ALLOW'
+}
+Check 'ATTRIBUTION: destroy_protection words in a test file are inert' {
+  Write-Review -Repo 'acme/unprotected' -Pr 241 -Depth 'elevated' -Evidence $ALL_EVIDENCE
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 241 -State (New-PrState @{
+    files = @(@{ path = 'tests/fixtures/tf_cases.ps1' })
+    patch = "diff --git a/tests/fixtures/tf_cases.ps1 b/tests/fixtures/tf_cases.ps1`n+++ b/tests/fixtures/tf_cases.ps1`n-  deletion_protection = true`n+  deletion_protection = false`n" })
+  Assert-Verdict $r 'ALLOW'
+}
+Check 'ATTRIBUTION: the SAME destructive SQL in a real .sql file IS human-only' {
+  Write-Review -Repo 'acme/unprotected' -Pr 242 -Depth 'elevated' -Evidence $ALL_EVIDENCE
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 242 -State (New-PrState @{
+    files = @(@{ path = 'db/migrations/008_drop.sql' })
+    patch = "diff --git a/db/migrations/008_drop.sql b/db/migrations/008_drop.sql`n+++ b/db/migrations/008_drop.sql`n+DROP TABLE customers;`n" })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'HUMAN_ONLY_ACTION'
+}
+Check 'ATTRIBUTION: the SAME destroy_protection removal in a real .tf file IS human-only' {
+  Write-Review -Repo 'acme/unprotected' -Pr 243 -Depth 'elevated' -Evidence $ALL_EVIDENCE
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 243 -State (New-PrState @{
+    files = @(@{ path = 'infra/terraform/rds.tf' })
+    patch = "diff --git a/infra/terraform/rds.tf b/infra/terraform/rds.tf`n+++ b/infra/terraform/rds.tf`n-  deletion_protection = true`n+  deletion_protection = false`n" })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'HUMAN_ONLY_ACTION'
+}
+Check 'ATTRIBUTION: credential material in a test file is DOWNGRADED, not ignored' {
+  # Must still demand evidence — a real key can hide in a file named like a test.
+  $noSecretEv = $ALL_EVIDENCE.Clone(); $noSecretEv.Remove('no_secret_material')
+  Write-Review -Repo 'acme/unprotected' -Pr 244 -Depth 'elevated' -Evidence $noSecretEv
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 244 -State (New-PrState @{
+    files = @(@{ path = 'scripts/cycle/Test-CycleGate.ps1' })
+    patch = "diff --git a/scripts/cycle/Test-CycleGate.ps1 b/scripts/cycle/Test-CycleGate.ps1`n+++ b/scripts/cycle/Test-CycleGate.ps1`n+AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF`n" })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'ELEVATED_EVIDENCE_MISSING'
+}
+Check 'ATTRIBUTION: credential material in a test file passes once confirmed a fixture' {
+  Write-Review -Repo 'acme/unprotected' -Pr 245 -Depth 'elevated' -Evidence $ALL_EVIDENCE
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 245 -State (New-PrState @{
+    files = @(@{ path = 'scripts/cycle/Test-CycleGate.ps1' })
+    patch = "diff --git a/scripts/cycle/Test-CycleGate.ps1 b/scripts/cycle/Test-CycleGate.ps1`n+++ b/scripts/cycle/Test-CycleGate.ps1`n+AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF`n" })
+  Assert-Verdict $r 'ALLOW'
+}
+Check 'ATTRIBUTION: credential material in an OPERATIONAL file stays human-only' {
+  Write-Review -Repo 'acme/unprotected' -Pr 246 -Depth 'elevated' -Evidence $ALL_EVIDENCE
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 246 -State (New-PrState @{
+    files = @(@{ path = 'services/api/config.ts' })
+    patch = "diff --git a/services/api/config.ts b/services/api/config.ts`n+++ b/services/api/config.ts`n+AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF`n" })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'HUMAN_ONLY_ACTION'
 }
 
 # ---- MARKERS: evidence to be adjudicated, never silently stripped ----------
