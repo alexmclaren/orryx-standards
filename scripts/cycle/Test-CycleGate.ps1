@@ -1,0 +1,320 @@
+<#
+  Self-test for cycle-gate.ps1 — the merge-authority safety core.
+
+  No test framework on purpose: plain asserts, runnable anywhere pwsh is, zero
+  install. Every rule in the gate has at least one test, and every fail-closed
+  path is asserted to BLOCK rather than merely "not ALLOW".
+
+      pwsh -NoProfile -File scripts/cycle/Test-CycleGate.ps1
+
+  Exit code 0 = all passed, 1 = at least one failure.
+#>
+[CmdletBinding()]
+param([switch]$Quiet)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+$gate = Join-Path $PSScriptRoot 'cycle-gate.ps1'
+if (-not (Test-Path $gate)) { throw "cycle-gate.ps1 not found beside this test at $gate" }
+
+$sandbox    = Join-Path ([IO.Path]::GetTempPath()) ("cyclegate-" + [guid]::NewGuid().ToString('n').Substring(0, 8))
+$reviewDir  = Join-Path $sandbox 'reviews'
+New-Item -ItemType Directory -Force -Path $reviewDir | Out-Null
+
+$protFile = Join-Path $sandbox 'branch-protection.json'
+@{
+  repos = @{
+    'acme/protected'   = @{ branch = 'main'; expected = @{ contexts = @('backend-tests', 'Gitleaks (full tree, blocking)') } }
+    'acme/unprotected' = @{ branch = 'main'; expected = $null }
+  }
+} | ConvertTo-Json -Depth 8 | Set-Content -Path $protFile -Encoding utf8
+
+$HEAD = 'a'* 40
+$OTHER = 'b'* 40
+
+function New-PrState {
+  param([hashtable]$Override = @{})
+  $base = @{
+    number = 1; isDraft = $false; mergeable = 'MERGEABLE'; mergeStateStatus = 'CLEAN'
+    headRefOid = $HEAD; reviewDecision = ''; baseRefName = 'main'; title = 't'; url = 'u'
+    additions = 10; deletions = 1
+    files = @(@{ path = 'src/app.ts' })
+    statusCheckRollup = @(@{ name = 'backend-tests'; status = 'COMPLETED'; conclusion = 'SUCCESS' })
+    reviewThreads = @()
+  }
+  foreach ($k in $Override.Keys) { $base[$k] = $Override[$k] }
+  return ([pscustomobject]$base)
+}
+
+function Write-Review {
+  param([string]$Repo, [int]$Pr, [string]$Sha = $HEAD, [string]$Verdict = 'APPROVE',
+        [string]$Reviewer = 'reviewer-pass', [string]$AuthoredBy = 'implementer-pass')
+  $p = Join-Path $reviewDir (($Repo -replace '/', '__') + "__$Pr.json")
+  @{ reviewed_sha = $Sha; verdict = $Verdict; reviewer = $Reviewer; authored_by = $AuthoredBy
+     at = (Get-Date).ToUniversalTime().ToString('o') } | ConvertTo-Json | Set-Content -Path $p -Encoding utf8
+}
+
+function Invoke-Gate {
+  param([string]$Repo, [int]$Pr, [psobject]$State, [switch]$AllowNoCI, [int]$MaxFiles = 40)
+  $p = @{ Repo = $Repo; Pr = $Pr; InputObject = $State; StateRoot = $sandbox
+          ProtectionFile = $protFile; MaxFiles = $MaxFiles }
+  if ($AllowNoCI) { $p.AllowNoCI = $true }
+  & $gate @p
+}
+
+$pass = 0; $fail = 0
+function Check {
+  param([string]$Name, [scriptblock]$Body)
+  try {
+    & $Body
+    $script:pass++
+    if (-not $Quiet) { Write-Host "  PASS  $Name" -ForegroundColor DarkGreen }
+  } catch {
+    $script:fail++
+    Write-Host "  FAIL  $Name" -ForegroundColor Red
+    Write-Host "        $($_.Exception.Message)" -ForegroundColor Red
+  }
+}
+function Assert-Verdict {
+  param($Result, [string]$Expected)
+  if ($Result.verdict -ne $Expected) {
+    throw "expected verdict $Expected, got $($Result.verdict). reasons: $(($Result.reasons | ForEach-Object { $_.code }) -join ',')"
+  }
+}
+function Assert-Reason {
+  param($Result, [string]$Code)
+  $codes = @($Result.reasons | ForEach-Object { $_.code })
+  if ($codes -notcontains $Code) { throw "expected reason '$Code'; got: $($codes -join ',')" }
+}
+function Assert-Equal {
+  param($Actual, $Expected, [string]$What = 'value')
+  if ($Actual -ne $Expected) { throw "$What : expected '$Expected', got '$Actual'" }
+}
+
+Write-Host "cycle-gate self-test" -ForegroundColor Cyan
+Write-Host "  sandbox: $sandbox"
+
+# ---- the one and only ALLOW path -------------------------------------------
+Check 'ALLOW when every criterion is satisfied' {
+  Write-Review -Repo 'acme/unprotected' -Pr 10
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 10 -State (New-PrState)
+  Assert-Verdict $r 'ALLOW'
+}
+
+# ---- C1 draft --------------------------------------------------------------
+Check 'BLOCK a draft PR' {
+  Write-Review -Repo 'acme/unprotected' -Pr 11
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 11 -State (New-PrState @{ isDraft = $true })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'IS_DRAFT'
+}
+
+# ---- C2 mergeability -------------------------------------------------------
+Check 'BLOCK when mergeStateStatus=BEHIND' {
+  Write-Review -Repo 'acme/unprotected' -Pr 12
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 12 -State (New-PrState @{ mergeStateStatus = 'BEHIND' })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'MERGE_STATE_NOT_CLEAN'
+}
+Check 'BLOCK when conflicting (DIRTY)' {
+  Write-Review -Repo 'acme/unprotected' -Pr 13
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 13 -State (New-PrState @{ mergeable = 'CONFLICTING'; mergeStateStatus = 'DIRTY' })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'NOT_MERGEABLE'
+}
+Check 'BLOCK when mergeability still UNKNOWN (fail closed)' {
+  Write-Review -Repo 'acme/unprotected' -Pr 14
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 14 -State (New-PrState @{ mergeable = 'UNKNOWN'; mergeStateStatus = 'UNKNOWN' })
+  Assert-Verdict $r 'BLOCK'
+}
+
+# ---- C3 CI evidence -- the most dangerous rule -----------------------------
+Check 'BLOCK when zero checks reported (absent CI is NOT green)' {
+  Write-Review -Repo 'acme/unprotected' -Pr 20
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 20 -State (New-PrState @{ statusCheckRollup = @() })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'NO_CI_EVIDENCE'
+}
+Check 'zero checks may pass C3 only with explicit -AllowNoCI, and it is recorded' {
+  Write-Review -Repo 'acme/unprotected' -Pr 21
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 21 -State (New-PrState @{ statusCheckRollup = @() }) -AllowNoCI
+  Assert-Verdict $r 'ALLOW'
+  Assert-Equal $r.allow_no_ci $true 'allow_no_ci recorded in verdict'
+}
+Check 'BLOCK on a failing check' {
+  Write-Review -Repo 'acme/unprotected' -Pr 22
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 22 -State (New-PrState @{
+    statusCheckRollup = @(@{ name = 'backend-tests'; status = 'COMPLETED'; conclusion = 'FAILURE' }) })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'CI_NOT_GREEN'
+}
+Check 'BLOCK while a check is still running' {
+  Write-Review -Repo 'acme/unprotected' -Pr 23
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 23 -State (New-PrState @{
+    statusCheckRollup = @(@{ name = 'backend-tests'; status = 'IN_PROGRESS'; conclusion = $null }) })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'CI_INCOMPLETE'
+}
+Check 'SKIPPED and NEUTRAL conclusions are acceptable' {
+  Write-Review -Repo 'acme/unprotected' -Pr 24
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 24 -State (New-PrState @{
+    statusCheckRollup = @(
+      @{ name = 'a'; status = 'COMPLETED'; conclusion = 'SKIPPED' },
+      @{ name = 'b'; status = 'COMPLETED'; conclusion = 'NEUTRAL' }) })
+  Assert-Verdict $r 'ALLOW'
+}
+
+# ---- C4 declared protection, enforced by exact name ------------------------
+Check 'BLOCK when a declared required context did not report' {
+  Write-Review -Repo 'acme/protected' -Pr 30
+  $r = Invoke-Gate -Repo 'acme/protected' -Pr 30 -State (New-PrState)   # only backend-tests present
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'REQUIRED_CONTEXT_MISSING'
+}
+Check 'ALLOW when every declared required context reports SUCCESS' {
+  Write-Review -Repo 'acme/protected' -Pr 31
+  $r = Invoke-Gate -Repo 'acme/protected' -Pr 31 -State (New-PrState @{
+    statusCheckRollup = @(
+      @{ name = 'backend-tests'; status = 'COMPLETED'; conclusion = 'SUCCESS' },
+      @{ name = 'Gitleaks (full tree, blocking)'; status = 'COMPLETED'; conclusion = 'SUCCESS' }) })
+  Assert-Verdict $r 'ALLOW'
+}
+Check 'required-context match is byte-exact (case difference does NOT satisfy it)' {
+  Write-Review -Repo 'acme/protected' -Pr 32
+  $r = Invoke-Gate -Repo 'acme/protected' -Pr 32 -State (New-PrState @{
+    statusCheckRollup = @(
+      @{ name = 'Backend-Tests'; status = 'COMPLETED'; conclusion = 'SUCCESS' },
+      @{ name = 'Gitleaks (full tree, blocking)'; status = 'COMPLETED'; conclusion = 'SUCCESS' }) })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'REQUIRED_CONTEXT_MISSING'
+}
+Check 'BLOCK when protection is declared for a different base branch' {
+  Write-Review -Repo 'acme/protected' -Pr 33
+  $r = Invoke-Gate -Repo 'acme/protected' -Pr 33 -State (New-PrState @{
+    baseRefName = 'develop'
+    statusCheckRollup = @(
+      @{ name = 'backend-tests'; status = 'COMPLETED'; conclusion = 'SUCCESS' },
+      @{ name = 'Gitleaks (full tree, blocking)'; status = 'COMPLETED'; conclusion = 'SUCCESS' }) })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'PROTECTION_UNDECLARED_FOR_BASE'
+}
+Check 'BLOCK when the protection declaration file is missing' {
+  Write-Review -Repo 'acme/unprotected' -Pr 34
+  $r = & $gate -Repo 'acme/unprotected' -Pr 34 -InputObject (New-PrState) -StateRoot $sandbox `
+        -ProtectionFile (Join-Path $sandbox 'nope.json')
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'PROTECTION_FILE_MISSING'
+}
+
+# ---- C5 review state -------------------------------------------------------
+Check 'BLOCK when changes were requested' {
+  Write-Review -Repo 'acme/unprotected' -Pr 40
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 40 -State (New-PrState @{ reviewDecision = 'CHANGES_REQUESTED' })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'CHANGES_REQUESTED'
+}
+Check 'BLOCK on unresolved review threads' {
+  Write-Review -Repo 'acme/unprotected' -Pr 41
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 41 -State (New-PrState @{
+    reviewThreads = @(@{ isResolved = $false }, @{ isResolved = $true }) })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'UNRESOLVED_REVIEW_THREADS'
+}
+
+# ---- C6 human-only surfaces -----------------------------------------------
+$humanOnly = @{
+  'a DB migration'      = 'backend/migrations/0007_add_col.py'
+  'a raw SQL file'      = 'db/fix.sql'
+  'a dotenv file'       = 'services/.env.production'
+  'a private key'       = 'deploy/id_rsa.key'
+  'pricing code'        = 'src/pricing/tiers.ts'
+  'Stripe integration'  = 'api/stripe_webhook.py'
+  'terraform'           = 'infra/terraform/rds.tf'
+  'kubernetes config'   = 'k8s/configmap.yaml'
+  'a CI workflow'       = '.github/workflows/deploy.yml'
+  'legal terms'         = 'legal/terms-of-service.md'
+  'patient data code'   = 'app/patient_record.py'
+}
+$i = 50
+foreach ($what in $humanOnly.Keys) {
+  $path = $humanOnly[$what]
+  $n = $i; $i++
+  Check "BLOCK: $what is human-only ($path)" {
+    Write-Review -Repo 'acme/unprotected' -Pr $n
+    $r = Invoke-Gate -Repo 'acme/unprotected' -Pr $n -State (New-PrState @{ files = @(@{ path = $path }) })
+    Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'HUMAN_ONLY_SURFACE'
+  }.GetNewClosure()
+}
+
+# ---- C7 scope --------------------------------------------------------------
+Check 'BLOCK when the change touches too many files' {
+  Write-Review -Repo 'acme/unprotected' -Pr 70
+  $many = 1..45 | ForEach-Object { @{ path = "src/f$_.ts" } }
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 70 -State (New-PrState @{ files = $many })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'SCOPE_TOO_MANY_FILES'
+}
+Check 'BLOCK when additions exceed the ceiling' {
+  Write-Review -Repo 'acme/unprotected' -Pr 71
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 71 -State (New-PrState @{ additions = 5000 })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'SCOPE_TOO_MANY_ADDITIONS'
+}
+Check 'BLOCK when no changed files are reported at all' {
+  Write-Review -Repo 'acme/unprotected' -Pr 72
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 72 -State (New-PrState @{ files = @() })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'NO_FILES_REPORTED'
+}
+
+# ---- C8 independent, SHA-pinned review ------------------------------------
+Check 'BLOCK when no review artifact exists' {
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 80 -State (New-PrState)   # no Write-Review
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'NO_INDEPENDENT_REVIEW'
+}
+Check 'BLOCK when the review approved a different SHA (new commits landed)' {
+  Write-Review -Repo 'acme/unprotected' -Pr 81 -Sha $OTHER
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 81 -State (New-PrState)
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'REVIEW_STALE'
+}
+Check 'BLOCK when the review verdict is not APPROVE' {
+  Write-Review -Repo 'acme/unprotected' -Pr 82 -Verdict 'REJECT'
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 82 -State (New-PrState)
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'REVIEW_NOT_APPROVED'
+}
+Check 'BLOCK self-approval: reviewer identity equals the author identity' {
+  Write-Review -Repo 'acme/unprotected' -Pr 83 -Reviewer 'same-pass' -AuthoredBy 'same-pass'
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 83 -State (New-PrState)
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'REVIEW_NOT_INDEPENDENT'
+}
+Check 'BLOCK when the review records no reviewer identity' {
+  Write-Review -Repo 'acme/unprotected' -Pr 84 -Reviewer ''
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 84 -State (New-PrState)
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'REVIEW_NO_REVIEWER'
+}
+Check 'BLOCK when the review artifact is corrupt' {
+  $p = Join-Path $reviewDir 'acme__unprotected__85.json'
+  Set-Content -Path $p -Value '{ not json' -Encoding utf8
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 85 -State (New-PrState)
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'REVIEW_UNREADABLE'
+}
+
+# ---- change classification ------------------------------------------------
+Check 'classify a docs-only change' {
+  Write-Review -Repo 'acme/unprotected' -Pr 90
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 90 -State (New-PrState @{ files = @(@{ path = 'README.md' }, @{ path = 'docs/x.md' }) })
+  Assert-Equal $r.change_class 'docs' 'change_class'
+}
+Check 'classify a lockfile-only dependency bump' {
+  Write-Review -Repo 'acme/unprotected' -Pr 91
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 91 -State (New-PrState @{ files = @(@{ path = 'package.json' }, @{ path = 'package-lock.json' }) })
+  Assert-Equal $r.change_class 'deps' 'change_class'
+}
+Check 'classify a code change' {
+  Write-Review -Repo 'acme/unprotected' -Pr 92
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 92 -State (New-PrState)
+  Assert-Equal $r.change_class 'code' 'change_class'
+}
+
+# ---- multiple independent failures all surface -----------------------------
+Check 'every failing criterion is reported, not just the first' {
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 99 -State (New-PrState @{
+    isDraft = $true; mergeStateStatus = 'DIRTY'; mergeable = 'CONFLICTING'
+    statusCheckRollup = @(); files = @(@{ path = 'infra/terraform/main.tf' }) })
+  Assert-Verdict $r 'BLOCK'
+  foreach ($c in @('IS_DRAFT', 'NOT_MERGEABLE', 'MERGE_STATE_NOT_CLEAN', 'NO_CI_EVIDENCE', 'HUMAN_ONLY_SURFACE', 'NO_INDEPENDENT_REVIEW')) {
+    Assert-Reason $r $c
+  }
+}
+
+Remove-Item -Recurse -Force $sandbox -ErrorAction SilentlyContinue
+
+Write-Host ""
+Write-Host "  $pass passed, $fail failed" -ForegroundColor $(if ($fail) { 'Red' } else { 'Green' })
+if ($fail) { exit 1 } else { exit 0 }
