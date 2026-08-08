@@ -235,6 +235,42 @@ foreach ($what in $humanOnly.Keys) {
   }.GetNewClosure()
 }
 
+# ---- C6b explicit human-gate markers --------------------------------------
+# Regression guard: orryx-flow #49 was ALLOWed on 2026-08-08 despite carrying
+# "[REQUIRES HUMAN REVIEW]" in its title, because every risk check was path-based.
+Check 'BLOCK on [REQUIRES HUMAN REVIEW] in the title' {
+  Write-Review -Repo 'acme/unprotected' -Pr 61
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 61 -State (New-PrState @{
+    title = 'fix(security): reject non-access JWTs as bearer credentials [REQUIRES HUMAN REVIEW]' })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'REQUIRES_HUMAN_REVIEW_TAG'
+}
+Check 'BLOCK on [REQUIRES HUMAN REVIEW] in the body' {
+  Write-Review -Repo 'acme/unprotected' -Pr 62
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 62 -State (New-PrState @{
+    body = "Implements the thing.`n`n[REQUIRES HUMAN REVIEW] - touches consent logic." })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'REQUIRES_HUMAN_REVIEW_TAG'
+}
+Check 'BLOCK on a do-not-merge label' {
+  Write-Review -Repo 'acme/unprotected' -Pr 63
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 63 -State (New-PrState @{
+    labels = @(@{ name = 'do-not-merge' }) })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'REQUIRES_HUMAN_REVIEW_TAG'
+}
+Check 'BLOCK on DO NOT MERGE in the title' {
+  Write-Review -Repo 'acme/unprotected' -Pr 64
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 64 -State (New-PrState @{
+    title = 'RLS fail-closed + secret scrub (DO NOT MERGE - staged)' })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'REQUIRES_HUMAN_REVIEW_TAG'
+}
+Check 'the marker match is not so loose it catches ordinary review wording' {
+  Write-Review -Repo 'acme/unprotected' -Pr 65
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 65 -State (New-PrState @{
+    title  = 'chore(deps): bump tsx from 4.23.1 to 4.23.4'
+    body   = 'Please review when you get a chance. Requires human review of the changelog? No.'
+    labels = @(@{ name = 'dependencies' }) })
+  Assert-Verdict $r 'ALLOW'
+}
+
 # ---- C7 scope --------------------------------------------------------------
 Check 'BLOCK when the change touches too many files' {
   Write-Review -Repo 'acme/unprotected' -Pr 70

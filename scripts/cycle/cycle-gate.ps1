@@ -134,7 +134,7 @@ if ($InputObject) {
   # NOTE: reviewThreads is NOT a valid `gh pr view --json` field on gh 2.30.0
   # (the installed version) — including it makes the whole call fail with
   # "Unknown JSON field". Thread state is fetched separately via GraphQL below.
-  $fields = 'number,isDraft,mergeable,mergeStateStatus,headRefOid,reviewDecision,files,additions,deletions,statusCheckRollup,baseRefName,title,url'
+  $fields = 'number,isDraft,mergeable,mergeStateStatus,headRefOid,reviewDecision,files,additions,deletions,statusCheckRollup,baseRefName,title,url,body,labels'
   $raw = & gh pr view $Pr --repo $Repo --json $fields 2>&1
   if ($LASTEXITCODE -ne 0) {
     $v = [pscustomobject]@{
@@ -286,6 +286,31 @@ if (-not $threadsVerified) {
 # --- C6  human-only risk surface -------------------------------------------
 foreach ($f in $riskFlags) {
   Deny 'HUMAN_ONLY_SURFACE' "$($f.flag): $($f.paths -join ', ')"
+}
+
+# --- C6b  explicit [REQUIRES HUMAN REVIEW] marker ---------------------------
+# CLAUDE.base.md §7 defines this tag as THE way an author or routine marks a
+# change as human-gated: clinical logic, patient matching, compliance
+# interpretation, privacy decisions, production data, low-confidence output.
+# Found by running the gate live on 2026-08-08: orryx-flow #49
+# ("fix(security): reject non-access JWTs as bearer credentials
+# [REQUIRES HUMAN REVIEW]") passed every path-based check and was ALLOWed,
+# because the marker lives in the title/body/labels, not in a file path. A
+# path-only risk scan cannot see an author's explicit escalation.
+$declaredHuman = @()
+$prTitleRaw = [string](Prop $prState 'title' '')
+$prBodyRaw  = [string](Prop $prState 'body'  '')
+$labelNames = @(@(Prop $prState 'labels' @()) | ForEach-Object { [string](Prop $_ 'name' '') })
+if ($prTitleRaw -match '(?i)\[\s*REQUIRES\s+HUMAN\s+REVIEW\s*\]') { $declaredHuman += 'title' }
+if ($prBodyRaw  -match '(?i)\[\s*REQUIRES\s+HUMAN\s+REVIEW\s*\]') { $declaredHuman += 'body' }
+foreach ($ln in $labelNames) {
+  if ($ln -match '(?i)requires[- ]?human[- ]?review|do[- ]not[- ]merge|human[- ]gated') { $declaredHuman += "label:$ln" }
+}
+if ($prTitleRaw -match '(?i)\bDO\s+NOT\s+MERGE\b' -or $prBodyRaw -match '(?i)\bDO\s+NOT\s+MERGE\b') {
+  $declaredHuman += 'do-not-merge'
+}
+if ($declaredHuman.Count -gt 0) {
+  Deny 'REQUIRES_HUMAN_REVIEW_TAG' "the change is explicitly marked human-gated in: $($declaredHuman -join ', ')"
 }
 
 # --- C7  scope sanity -------------------------------------------------------

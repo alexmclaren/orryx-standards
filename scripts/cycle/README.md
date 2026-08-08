@@ -83,6 +83,7 @@ Criteria, each with tests:
 | C4 | Declared required contexts present and green, matched **byte-exactly** | `REQUIRED_CONTEXT_MISSING`, `REQUIRED_CONTEXT_NOT_GREEN`, `PROTECTION_FILE_MISSING`, `PROTECTION_UNDECLARED_FOR_BASE` |
 | C5 | No `CHANGES_REQUESTED`, no unresolved threads | `CHANGES_REQUESTED`, `UNRESOLVED_REVIEW_THREADS`, `REVIEW_THREADS_UNVERIFIED` |
 | C6 | No human-only surface in the diff | `HUMAN_ONLY_SURFACE` |
+| C6b | No explicit human-gate marker in title/body/labels | `REQUIRES_HUMAN_REVIEW_TAG` |
 | C7 | Scope within ceilings (40 files / 800 additions) | `SCOPE_TOO_MANY_FILES`, `SCOPE_TOO_MANY_ADDITIONS`, `NO_FILES_REPORTED` |
 | C8 | Independent, SHA-pinned review approving the current head | `NO_INDEPENDENT_REVIEW`, `REVIEW_STALE`, `REVIEW_NOT_APPROVED`, `REVIEW_NOT_INDEPENDENT`, `REVIEW_NO_REVIEWER`, `REVIEW_UNREADABLE` |
 
@@ -119,6 +120,14 @@ protection is the boundary this harness exists to respect.
 Any changed path matching these classes blocks with `HUMAN_ONLY_SURFACE`:
 `migration`, `secret`, `money_or_legal`, `infrastructure`, `ci_or_policy`,
 `prod_config`, `privacy_phi`.
+
+**A path scan alone is not enough.** `CLAUDE.base.md` §7 defines
+`[REQUIRES HUMAN REVIEW]` as how an author marks a change human-gated, and that
+marker lives in the PR title/body/labels, not in a file path. Found live on
+2026-08-08: orryx-flow #49 (`fix(security): reject non-access JWTs as bearer
+credentials [REQUIRES HUMAN REVIEW]`) passed every path-based check and was
+ALLOWed. C6b now blocks on that marker, on `DO NOT MERGE`, and on
+`do-not-merge` / `human-gated` labels.
 
 Deliberately broad. A false block costs one human glance; a false allow can cost
 production. Tune the patterns in `cycle-gate.ps1` (`$HumanOnlyPatterns`) and add a
@@ -214,3 +223,4 @@ Tests inject state via `-InputObject`, so no network is needed. `Prop` handles
 both `PSCustomObject` (real `gh` output) and hashtables (injected state) — a
 dictionary-blind version silently read every injected field as absent, which
 presented as "no files changed, no checks ran" and disabled the risk scan.
+
