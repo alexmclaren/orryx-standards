@@ -10,7 +10,8 @@ Repos:
 - Frontend: D:\Pillarworks-Enterprise-Website (github alexmclaren/Pillarworks-Enterprise-Website).
 
 STEP 1 — GATHER TRUTH
-- git fetch both repos; list main commits from the last 24h (merged PR subjects).
+- `git fetch origin` in both repos — **no refspec, all refs** (`git fetch origin main` updates only that ref and silently leaves every other remote-tracking ref stale; see `_shared/REMOTE_REF_HYGIENE.md`). Then list main commits from the last 24h (merged PR subjects).
+  Note: `D:\Pillarworks-Enterprise-Website` is a multi-worktree repo — linked worktrees share one ref store, so one stale ref misleads every worktree at once.
 - gh pr list and gh issue list (open) for both repos.
 - Probe production: curl https://build.orryx.dev/health (expect {"status":"healthy"}); curl -sI https://pillarworks.io (expect 200). Note anomalies.
 

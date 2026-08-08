@@ -7,6 +7,12 @@ You are the one-time Stripe LIVE go-live gate for Pillarworks (repo D:\pillarwor
 
 Use the PowerShell tool for all D:\ access and git/gh. Write the output to D:\reports\daily\stripe-go-live-gate-{today ISO date}.md and ALSO surface the checklist as your run output.
 
+**Before any git check below, run `git fetch origin` (no refspec, all refs) in the repo.**
+`origin/main` is a *local cached ref*; a refspec'd or skipped fetch means "reachable from
+origin/main" answers about a snapshot, not the remote — see
+`_shared/REMOTE_REF_HYGIENE.md`. This gate decides whether live payment keys get pasted,
+so a stale ref here converts into a GO verdict on a precondition that was never met.
+
 Verify each item at ground truth (disk/git/AWS), not from docs:
 
 1. **Billing entitlement guard**: pillarworks PR #264 (fix(billing): preserve paid entitlements on unrecognised price id) is on main — confirm the commit is reachable from origin/main and note whether any human review happened post-merge (title carried [NEEDS REVIEW]).
