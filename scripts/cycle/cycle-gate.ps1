@@ -79,17 +79,87 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # --- risk classification -----------------------------------------------------
-# Paths that cross a human-only boundary. Matched case-insensitively against
-# every changed file path. Deliberately broad: a false BLOCK costs one human
-# glance, a false ALLOW can cost production.
-$script:HumanOnlyPatterns = [ordered]@{
-  migration      = '(^|/)(migrations?|alembic)/|\.sql$|schema\.prisma$'
-  secret         = '(^|/)\.env|(^|/)secrets?/|\.pem$|\.key$|(^|/)credentials|id_rsa'
-  money_or_legal = 'pricing|billing|stripe|payment|invoice|subscription|(^|/)legal/|terms-of|privacy-policy'
-  infrastructure = '(^|/)terraform/|\.tf$|(^|/)k8s/|kustomiz|(^|/)helm/|Dockerfile|docker-compose'
-  ci_or_policy   = '(^|/)\.github/workflows/|(^|/)\.pre-commit|gitleaks|(^|/)\.claude/settings'
-  prod_config    = 'configmap|(^|/)production|prod\.(ya?ml|json|tfvars)$'
-  privacy_phi    = '(^|/)phi/|patient|clinical.*(record|data)|deident'
+#
+# GOVERNANCE MODEL (revised 2026-08-08). Risk is graded by CONSEQUENCE, not by
+# file path, diff size, or historical convention.
+#
+# The distinction that matters:
+#   changing code that CONTROLS a sensitive operation   -> reviewable autonomously
+#   actually PERFORMING that sensitive operation        -> human decision
+#
+# A terraform file that renames a tag is not a production incident. A terraform
+# file that drops deletion_protection is. Path alone cannot tell those apart, so
+# the path only selects the TIER, and the tier decides what evidence is required.
+#
+#   tier = 'elevated'   -> autonomous merge permitted, but the review artifact
+#                          must carry the named evidence. Green CI is never
+#                          sufficient on its own.
+#   tier = 'human_only'  -> absolute. Reserved for consequences that cannot be
+#                          reversed by ordinary version control.
+#
+# Previously every one of these was an absolute block, which meant the harness
+# refused its own CI workflow and any diff over 800 lines. That is governance by
+# proxy metric, and it stalls exactly the work most worth automating.
+$script:RiskRules = [ordered]@{
+  migration = @{
+    pattern  = '(^|/)(migrations?|alembic)/|\.sql$|schema\.prisma$'
+    tier     = 'elevated'
+    requires = @('migration_reversibility', 'deployment_impact')
+    why      = 'A migration file is code until something runs it. Reversibility and whether merging triggers execution are the questions.'
+  }
+  secret_path = @{
+    pattern  = '(^|/)\.env|(^|/)secrets?/|\.pem$|\.key$|(^|/)credentials|id_rsa'
+    tier     = 'elevated'
+    requires = @('no_secret_material', 'full_diff_reviewed')
+    why      = 'Touching a secrets path is not the same as disclosing a secret. Adding a variable NAME is routine; adding a VALUE is not. Actual credential material is detected separately and is human-only.'
+  }
+  money_or_legal = @{
+    pattern  = 'pricing|billing|stripe|payment|invoice|subscription|(^|/)legal/|terms-of|privacy-policy'
+    tier     = 'elevated'
+    requires = @('business_intent_source', 'deployment_impact', 'full_diff_reviewed')
+    why      = 'Refactoring billing code is engineering. Changing what a customer is charged is a business decision, and needs a canonical plan to point at.'
+  }
+  infrastructure = @{
+    pattern  = '(^|/)terraform/|\.tf$|(^|/)k8s/|kustomiz|(^|/)helm/|Dockerfile|docker-compose'
+    tier     = 'elevated'
+    requires = @('deployment_impact', 'rollback_verified')
+    why      = 'IaC is reviewable. Irreversible IaC operations are detected from the diff content and escalate to human-only.'
+  }
+  ci_or_policy = @{
+    pattern  = '(^|/)\.github/workflows/|(^|/)\.pre-commit|gitleaks|(^|/)\.claude/settings'
+    tier     = 'elevated'
+    requires = @('workflow_syntax_validated', 'full_diff_reviewed')
+    why      = 'A workflow change can weaken the gates that protect everything else, so it needs syntax validation and a full read - not a human signature.'
+  }
+  prod_config = @{
+    pattern  = 'configmap|(^|/)production|prod\.(ya?ml|json|tfvars)$'
+    tier     = 'elevated'
+    requires = @('deployment_impact', 'rollback_verified')
+    why      = 'Production config is reversible by revert unless it triggers a destructive operation.'
+  }
+  privacy_phi = @{
+    pattern  = '(^|/)phi/|patient|clinical.*(record|data)|deident'
+    tier     = 'elevated'
+    requires = @('privacy_review', 'full_diff_reviewed')
+    why      = 'Clinical/PHI code paths need a targeted privacy read. Actual customer-data access or disclosure remains human-only.'
+  }
+}
+
+# Content signals read from the DIFF PATCH, not the path. These are the genuine
+# category-A consequences: things ordinary version control cannot undo.
+$script:IrreversibleContentRules = [ordered]@{
+  secret_material = @{
+    pattern = '(?m)^\+.*(ghp_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|(?i)(api[_-]?key|secret|token|password)\s*[:=]\s*["''][^"''$\{\s]{16,}["''])'
+    why     = 'Added lines contain what looks like real credential material. Disclosure cannot be undone by a revert - the credential is already exposed and must be rotated.'
+  }
+  destroy_protection_removed = @{
+    pattern = '(?m)^-.*(deletion_protection\s*=\s*true|prevent_destroy\s*=\s*true|skip_final_snapshot\s*=\s*false)|(?m)^\+.*(deletion_protection\s*=\s*false|prevent_destroy\s*=\s*false|force_destroy\s*=\s*true|skip_final_snapshot\s*=\s*true)'
+    why     = 'The diff removes a guard that exists to prevent irreversible destruction of a stateful resource.'
+  }
+  destructive_sql = @{
+    pattern = '(?mi)^\+.*\b(DROP\s+(TABLE|DATABASE|SCHEMA|COLUMN)|TRUNCATE\s+TABLE|DELETE\s+FROM\s+\w+\s*;)'
+    why     = 'Added SQL destroys data. If anything runs this migration, the loss is not recoverable by revert.'
+  }
 }
 
 function Get-ChangeClass {
@@ -108,14 +178,32 @@ function Get-ChangeClass {
 function Get-RiskFlags {
   param([string[]]$Paths)
   $flags = @()
-  foreach ($name in $script:HumanOnlyPatterns.Keys) {
-    $rx = $script:HumanOnlyPatterns[$name]
-    $hit = @($Paths | Where-Object { $_ -match $rx })
+  foreach ($name in $script:RiskRules.Keys) {
+    $rule = $script:RiskRules[$name]
+    $hit = @($Paths | Where-Object { $_ -match $rule.pattern })
     if ($hit.Count -gt 0) {
-      $flags += [pscustomobject]@{ flag = $name; paths = @($hit | Select-Object -First 5) }
+      $flags += [pscustomobject]@{
+        flag = $name; tier = $rule.tier; requires = @($rule.requires)
+        why = $rule.why; paths = @($hit | Select-Object -First 5)
+      }
     }
   }
   return $flags
+}
+
+function Get-IrreversibleSignals {
+  # Reads the diff PATCH. Absent patch => cannot clear these, so the caller
+  # treats that as unverified rather than clean.
+  param([string]$Patch)
+  $sigs = @()
+  if ([string]::IsNullOrWhiteSpace($Patch)) { return $sigs }
+  foreach ($name in $script:IrreversibleContentRules.Keys) {
+    $rule = $script:IrreversibleContentRules[$name]
+    if ($Patch -match $rule.pattern) {
+      $sigs += [pscustomobject]@{ signal = $name; why = $rule.why }
+    }
+  }
+  return $sigs
 }
 
 # --- input -------------------------------------------------------------------
@@ -166,6 +254,14 @@ if ($InputObject) {
   } else {
     $threadsVerified = $false
   }
+
+  # The diff patch is required to evaluate irreversible CONTENT signals (real
+  # credential material, dropped destroy-protection, destructive SQL). Path
+  # matching cannot see any of those. If the patch cannot be fetched we do not
+  # get to assume it is clean.
+  $pRaw = & gh pr diff $Pr --repo $Repo 2>&1
+  if ($LASTEXITCODE -eq 0) { $patchText = ($pRaw | Out-String) } else { $patchText = $null }
+  $prState | Add-Member -NotePropertyName patch -NotePropertyValue $patchText -Force
 }
 
 # Safe property read. Handles BOTH shapes we get in practice:
@@ -208,7 +304,7 @@ $reasons = New-Object System.Collections.Generic.List[object]
 function Deny { param([string]$Code, [string]$Detail) $reasons.Add([pscustomobject]@{ code = $Code; detail = $Detail }) }
 
 $changeClass = Get-ChangeClass -Paths $paths
-$riskFlags   = Get-RiskFlags  -Paths $paths
+$riskFlags   = @(Get-RiskFlags -Paths $paths)   # @() — see note at $irrev
 
 # --- C1  draft ---------------------------------------------------------------
 if ($isDraft) { Deny 'IS_DRAFT' 'PR is a draft; drafts are never auto-merged.' }
@@ -302,9 +398,61 @@ if (-not $threadsVerified) {
   if ($unresolved.Count -gt 0) { Deny 'UNRESOLVED_REVIEW_THREADS' "$($unresolved.Count) unresolved review thread(s)." }
 }
 
-# --- C6  human-only risk surface -------------------------------------------
+# --- C6  risk tiers: elevated needs EVIDENCE, human-only is absolute --------
+#
+# Read the review artifact early — C6/C6b/C7 all now depend on what evidence it
+# carries. C8 still validates it independently.
+$reviewDir  = Join-Path $StateRoot 'reviews'
+$slug       = ($Repo -replace '/', '__')
+$reviewPath = Join-Path $reviewDir "$slug`__$Pr.json"
+$review = $null
+if (Test-Path $reviewPath) {
+  try { $review = Get-Content $reviewPath -Raw | ConvertFrom-Json } catch { $review = 'UNREADABLE' }
+}
+function HasEvidence { param([string]$Key)
+  if (-not $review -or $review -eq 'UNREADABLE') { return $false }
+  $ev = Prop $review 'evidence'
+  if (-not $ev) { return $false }
+  return ([bool](Prop $ev $Key $false))
+}
+$reviewDepth = if ($review -and $review -ne 'UNREADABLE') { [string](Prop $review 'review_depth' 'ordinary') } else { 'ordinary' }
+
+# C6a — irreversible CONTENT signals. Absolute; no evidence can clear these,
+# because the consequence outlives the merge.
+$patch = [string](Prop $prState 'patch' '')
+# @() is load-bearing: an empty array returned from a function unrolls to $null,
+# and under StrictMode $null.Count throws.
+$irrev = @(Get-IrreversibleSignals -Patch $patch)
+foreach ($s in $irrev) {
+  Deny 'HUMAN_ONLY_ACTION' "$($s.signal): $($s.why)"
+}
+
+# C6b — path-derived tiers.
+$elevatedNeeded = @()
 foreach ($f in $riskFlags) {
-  Deny 'HUMAN_ONLY_SURFACE' "$($f.flag): $($f.paths -join ', ')"
+  if ($f.tier -eq 'human_only') {
+    Deny 'HUMAN_ONLY_ACTION' "$($f.flag): $($f.paths -join ', ')"
+    continue
+  }
+  # elevated: the named evidence must be present in the review artifact.
+  $elevatedNeeded += $f.flag
+  foreach ($req in $f.requires) {
+    if (-not (HasEvidence $req)) {
+      Deny 'ELEVATED_EVIDENCE_MISSING' "risk '$($f.flag)' ($($f.paths -join ', ')) requires review evidence '$req'. $($f.why)"
+    }
+  }
+}
+
+# If any elevated risk applies, the review must actually declare itself elevated.
+# This stops an ordinary-depth review from silently clearing an elevated change.
+if ($elevatedNeeded.Count -gt 0 -and $reviewDepth -cne 'elevated') {
+  Deny 'ELEVATED_REVIEW_REQUIRED' "risk signals [$($elevatedNeeded -join ', ')] require review_depth='elevated'; artifact declares '$reviewDepth'."
+}
+
+# An elevated change with no patch available cannot clear C6a, so say so rather
+# than passing on a path check alone.
+if ($elevatedNeeded.Count -gt 0 -and [string]::IsNullOrWhiteSpace($patch)) {
+  Deny 'PATCH_UNAVAILABLE' 'Elevated risk applies but the diff patch could not be read, so irreversible-content signals could not be evaluated.'
 }
 
 # --- C6b  explicit [REQUIRES HUMAN REVIEW] marker ---------------------------
@@ -329,12 +477,52 @@ if ($prTitleRaw -match '(?i)\bDO\s+NOT\s+MERGE\b' -or $prBodyRaw -match '(?i)\bD
   $declaredHuman += 'do-not-merge'
 }
 if ($declaredHuman.Count -gt 0) {
-  Deny 'REQUIRES_HUMAN_REVIEW_TAG' "the change is explicitly marked human-gated in: $($declaredHuman -join ', ')"
+  # An explicit marker is strong EVIDENCE, not an automatic veto — but it is never
+  # silently overridden. To proceed, the review must adjudicate it on the record:
+  # who placed it, why, whether that reason still holds, and whether the actual
+  # CONSEQUENCE is human-only. A marker reflecting a genuine irreversible boundary
+  # still halts; one reflecting a superseded blanket policy can be cleared with
+  # reasoning that stays in the artifact.
+  $adj = if ($review -and $review -ne 'UNREADABLE') { Prop $review 'marker_adjudication' } else { $null }
+  if (-not $adj) {
+    Deny 'MARKER_UNADJUDICATED' "explicitly marked human-gated in: $($declaredHuman -join ', '). To proceed, the review artifact must carry marker_adjudication{placed_by, reason, still_valid, superseded_by, consequence_is_human_only}. Do not strip the marker."
+  } else {
+    $stillValid  = [bool](Prop $adj 'still_valid' $true)          # unknown => still valid
+    $consequence = [bool](Prop $adj 'consequence_is_human_only' $true)
+    $reason      = [string](Prop $adj 'reason' '')
+    $placedBy    = [string](Prop $adj 'placed_by' '')
+    if (-not $reason -or -not $placedBy) {
+      Deny 'MARKER_ADJUDICATION_INCOMPLETE' 'marker_adjudication must record both placed_by and reason.'
+    }
+    if ($consequence) {
+      Deny 'HUMAN_ONLY_ACTION' "marker adjudicated as a genuine human-only consequence: $reason"
+    } elseif ($stillValid) {
+      Deny 'MARKER_STILL_VALID' "marker adjudicated as still applicable: $reason"
+    }
+    # else: superseded and the consequence is not human-only -> proceeds, with the
+    # reasoning permanently recorded in the artifact.
+  }
 }
 
 # --- C7  scope sanity -------------------------------------------------------
-if ($files.Count -gt $MaxFiles)     { Deny 'SCOPE_TOO_MANY_FILES' "$($files.Count) files changed (ceiling $MaxFiles)." }
-if ($additions -gt $MaxAdditions)   { Deny 'SCOPE_TOO_MANY_ADDITIONS' "$additions additions (ceiling $MaxAdditions)." }
+# Size is a proxy for review effort, not for danger. A 42-file generated-snapshot
+# refresh is safer than a 3-line change to an auth check. So exceeding a ceiling
+# now demands proportionate EVIDENCE rather than a human signature.
+$scopeElevated = ($files.Count -gt $MaxFiles) -or ($additions -gt $MaxAdditions)
+if ($scopeElevated) {
+  if (-not (HasEvidence 'full_diff_reviewed')) {
+    Deny 'SCOPE_EVIDENCE_MISSING' "$($files.Count) files / +$additions exceeds the ordinary ceiling ($MaxFiles files, $MaxAdditions additions); review evidence 'full_diff_reviewed' is required."
+  }
+  if ($reviewDepth -cne 'elevated') {
+    Deny 'ELEVATED_REVIEW_REQUIRED' "diff size ($($files.Count) files / +$additions) requires review_depth='elevated'; artifact declares '$reviewDepth'."
+  }
+  # Far beyond the ceiling: one careful pass is not enough evidence.
+  if ($files.Count -gt ($MaxFiles * 3) -or $additions -gt ($MaxAdditions * 3)) {
+    if (-not (HasEvidence 'second_review_pass')) {
+      Deny 'SECOND_REVIEW_REQUIRED' "diff is more than 3x the ordinary ceiling ($($files.Count) files / +$additions); review evidence 'second_review_pass' is required."
+    }
+  }
+}
 if ($files.Count -eq 0)             { Deny 'NO_FILES_REPORTED' 'No changed files reported; cannot assess scope or risk.' }
 # Absent additions defaulted to 0, which PASSES the ceiling — so a PR touching
 # few files could carry an arbitrarily large diff through C7 unmeasured
@@ -344,17 +532,14 @@ if (-not (HasProp $prState 'additions')) {
 }
 
 # --- C8  independent, SHA-pinned review ------------------------------------
-$reviewDir  = Join-Path $StateRoot 'reviews'
-$slug       = ($Repo -replace '/', '__')
-$reviewPath = Join-Path $reviewDir "$slug`__$Pr.json"
-$review     = $null
+# $review / $reviewPath were loaded before C6, which needs the evidence block.
 if (-not (Test-Path $reviewPath)) {
   Deny 'NO_INDEPENDENT_REVIEW' "No review artifact at $reviewPath. An independent review pass must approve this head SHA before merge."
-} else {
-  try { $review = Get-Content $reviewPath -Raw | ConvertFrom-Json }
-  catch { Deny 'REVIEW_UNREADABLE' "Could not parse $reviewPath : $($_.Exception.Message)" }
+} elseif ($review -eq 'UNREADABLE') {
+  Deny 'REVIEW_UNREADABLE' "Could not parse $reviewPath as JSON."
+  $review = $null
 }
-if ($review) {
+if ($review -and $review -ne 'UNREADABLE') {
   $rSha      = [string](Prop $review 'reviewed_sha' '')
   $rVerdict  = [string](Prop $review 'verdict' '')
   $reviewer  = [string](Prop $review 'reviewer' '')
@@ -395,6 +580,11 @@ $out = [pscustomobject]@{
   files_changed   = [int]$files.Count
   additions       = [int]$additions
   risk_flags      = $riskFlagNames
+  risk_tier       = [string]$(if ($irrev.Count -gt 0) { 'human_only' } elseif ($elevatedNeeded.Count -gt 0 -or $scopeElevated) { 'elevated' } else { 'ordinary' })
+  elevated_for    = @($elevatedNeeded)
+  scope_elevated  = [bool]$scopeElevated
+  review_depth    = [string]$reviewDepth
+  irreversible    = @($irrev | ForEach-Object { $_.signal })
   checks          = @($checkSummary)
   allow_no_ci     = [bool]$AllowNoCI
   reasons         = $reasonList

@@ -42,17 +42,33 @@ function New-PrState {
     files = @(@{ path = 'src/app.ts' })
     statusCheckRollup = @(@{ name = 'backend-tests'; status = 'COMPLETED'; conclusion = 'SUCCESS' })
     reviewThreads = @()
+    # A benign patch by default. Elevated risk requires a patch to be present at
+    # all, so tests that assert elevated behaviour must supply one.
+    patch = "diff --git a/src/app.ts b/src/app.ts`n+const x = 1;`n"
   }
   foreach ($k in $Override.Keys) { $base[$k] = $Override[$k] }
   return ([pscustomobject]$base)
 }
 
+# All evidence keys any elevated rule can demand. Tests pass a subset to prove a
+# missing key still blocks.
+$ALL_EVIDENCE = @{
+  full_diff_reviewed = $true; workflow_syntax_validated = $true
+  deployment_impact = $true; rollback_verified = $true
+  migration_reversibility = $true; business_intent_source = $true
+  privacy_review = $true; no_secret_material = $true; second_review_pass = $true
+}
+
 function Write-Review {
   param([string]$Repo, [int]$Pr, [string]$Sha = $HEAD, [string]$Verdict = 'APPROVE',
-        [string]$Reviewer = 'reviewer-pass', [string]$AuthoredBy = 'implementer-pass')
+        [string]$Reviewer = 'reviewer-pass', [string]$AuthoredBy = 'implementer-pass',
+        [string]$Depth = 'ordinary', [hashtable]$Evidence, [hashtable]$Marker)
   $p = Join-Path $reviewDir (($Repo -replace '/', '__') + "__$Pr.json")
-  @{ reviewed_sha = $Sha; verdict = $Verdict; reviewer = $Reviewer; authored_by = $AuthoredBy
-     at = (Get-Date).ToUniversalTime().ToString('o') } | ConvertTo-Json | Set-Content -Path $p -Encoding utf8
+  $o = @{ reviewed_sha = $Sha; verdict = $Verdict; reviewer = $Reviewer; authored_by = $AuthoredBy
+          review_depth = $Depth; at = (Get-Date).ToUniversalTime().ToString('o') }
+  if ($Evidence) { $o.evidence = $Evidence }
+  if ($Marker)   { $o.marker_adjudication = $Marker }
+  $o | ConvertTo-Json -Depth 6 | Set-Content -Path $p -Encoding utf8
 }
 
 function Invoke-Gate {
@@ -228,10 +244,14 @@ $i = 50
 foreach ($what in $humanOnly.Keys) {
   $path = $humanOnly[$what]
   $n = $i; $i++
-  Check "BLOCK: $what is human-only ($path)" {
+  # These are now ELEVATED, not absolute. An ordinary-depth review must still not
+  # clear them: the change blocks for want of evidence, not for want of a human.
+  Check "ELEVATED: $what needs evidence, ordinary review does not clear it ($path)" {
     Write-Review -Repo 'acme/unprotected' -Pr $n
     $r = Invoke-Gate -Repo 'acme/unprotected' -Pr $n -State (New-PrState @{ files = @(@{ path = $path }) })
-    Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'HUMAN_ONLY_SURFACE'
+    Assert-Verdict $r 'BLOCK'
+    Assert-Reason $r 'ELEVATED_EVIDENCE_MISSING'
+    Assert-Reason $r 'ELEVATED_REVIEW_REQUIRED'
   }.GetNewClosure()
 }
 
@@ -242,25 +262,25 @@ Check 'BLOCK on [REQUIRES HUMAN REVIEW] in the title' {
   Write-Review -Repo 'acme/unprotected' -Pr 61
   $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 61 -State (New-PrState @{
     title = 'fix(security): reject non-access JWTs as bearer credentials [REQUIRES HUMAN REVIEW]' })
-  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'REQUIRES_HUMAN_REVIEW_TAG'
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'MARKER_UNADJUDICATED'
 }
 Check 'BLOCK on [REQUIRES HUMAN REVIEW] in the body' {
   Write-Review -Repo 'acme/unprotected' -Pr 62
   $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 62 -State (New-PrState @{
     body = "Implements the thing.`n`n[REQUIRES HUMAN REVIEW] - touches consent logic." })
-  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'REQUIRES_HUMAN_REVIEW_TAG'
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'MARKER_UNADJUDICATED'
 }
 Check 'BLOCK on a do-not-merge label' {
   Write-Review -Repo 'acme/unprotected' -Pr 63
   $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 63 -State (New-PrState @{
     labels = @(@{ name = 'do-not-merge' }) })
-  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'REQUIRES_HUMAN_REVIEW_TAG'
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'MARKER_UNADJUDICATED'
 }
 Check 'BLOCK on DO NOT MERGE in the title' {
   Write-Review -Repo 'acme/unprotected' -Pr 64
   $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 64 -State (New-PrState @{
     title = 'RLS fail-closed + secret scrub (DO NOT MERGE - staged)' })
-  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'REQUIRES_HUMAN_REVIEW_TAG'
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'MARKER_UNADJUDICATED'
 }
 Check 'the marker match is not so loose it catches ordinary review wording' {
   Write-Review -Repo 'acme/unprotected' -Pr 65
@@ -276,12 +296,12 @@ Check 'BLOCK when the change touches too many files' {
   Write-Review -Repo 'acme/unprotected' -Pr 70
   $many = 1..45 | ForEach-Object { @{ path = "src/f$_.ts" } }
   $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 70 -State (New-PrState @{ files = $many })
-  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'SCOPE_TOO_MANY_FILES'
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'SCOPE_EVIDENCE_MISSING'; Assert-Reason $r 'ELEVATED_REVIEW_REQUIRED'
 }
 Check 'BLOCK when additions exceed the ceiling' {
   Write-Review -Repo 'acme/unprotected' -Pr 71
   $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 71 -State (New-PrState @{ additions = 5000 })
-  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'SCOPE_TOO_MANY_ADDITIONS'
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'SCOPE_EVIDENCE_MISSING'; Assert-Reason $r 'SECOND_REVIEW_REQUIRED'
 }
 Check 'BLOCK when no changed files are reported at all' {
   Write-Review -Repo 'acme/unprotected' -Pr 72
@@ -344,7 +364,7 @@ Check 'every failing criterion is reported, not just the first' {
     isDraft = $true; mergeStateStatus = 'DIRTY'; mergeable = 'CONFLICTING'
     statusCheckRollup = @(); files = @(@{ path = 'infra/terraform/main.tf' }) })
   Assert-Verdict $r 'BLOCK'
-  foreach ($c in @('IS_DRAFT', 'NOT_MERGEABLE', 'MERGE_STATE_NOT_CLEAN', 'NO_CI_EVIDENCE', 'HUMAN_ONLY_SURFACE', 'NO_INDEPENDENT_REVIEW')) {
+  foreach ($c in @('IS_DRAFT', 'NOT_MERGEABLE', 'MERGE_STATE_NOT_CLEAN', 'NO_CI_EVIDENCE', 'ELEVATED_EVIDENCE_MISSING', 'NO_INDEPENDENT_REVIEW')) {
     Assert-Reason $r $c
   }
 }
@@ -401,6 +421,121 @@ Check 'FALSIFY: reviewer differing only by case is still self-approval' {
   Write-Review -Repo 'acme/unprotected' -Pr 108 -Reviewer 'Same' -AuthoredBy 'same'
   $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 108 -State (New-PrState)
   Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'REVIEW_NOT_INDEPENDENT'
+}
+
+# ---- GOVERNANCE: evidence-based escalation (2026-08-08) ---------------------
+# The whole point of the tiered model: elevated risk is mergeable autonomously,
+# but ONLY on evidence. Green CI must never be sufficient by itself.
+
+Check 'GOVERNANCE: elevated risk + green CI + ordinary review => BLOCK' {
+  Write-Review -Repo 'acme/unprotected' -Pr 200 -Depth 'ordinary' -Evidence $ALL_EVIDENCE
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 200 -State (New-PrState @{ files = @(@{ path = '.github/workflows/ci.yml' }) })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'ELEVATED_REVIEW_REQUIRED'
+}
+Check 'GOVERNANCE: elevated risk + elevated review but ONE evidence key missing => BLOCK' {
+  $partial = $ALL_EVIDENCE.Clone(); $partial.Remove('workflow_syntax_validated')
+  Write-Review -Repo 'acme/unprotected' -Pr 201 -Depth 'elevated' -Evidence $partial
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 201 -State (New-PrState @{ files = @(@{ path = '.github/workflows/ci.yml' }) })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'ELEVATED_EVIDENCE_MISSING'
+}
+Check 'GOVERNANCE: a CI workflow change CAN reach ALLOW with elevated review + full evidence' {
+  Write-Review -Repo 'acme/unprotected' -Pr 202 -Depth 'elevated' -Evidence $ALL_EVIDENCE
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 202 -State (New-PrState @{ files = @(@{ path = '.github/workflows/ci.yml' }) })
+  Assert-Verdict $r 'ALLOW'
+  Assert-Equal $r.risk_tier 'elevated' 'risk_tier'
+}
+Check 'GOVERNANCE: elevated risk with NO patch available => BLOCK (cannot clear content checks)' {
+  Write-Review -Repo 'acme/unprotected' -Pr 203 -Depth 'elevated' -Evidence $ALL_EVIDENCE
+  $s = New-PrState @{ files = @(@{ path = 'infra/terraform/main.tf' }) }
+  $s.PSObject.Properties.Remove('patch')
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 203 -State $s
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'PATCH_UNAVAILABLE'
+}
+
+# ---- ABSOLUTE: irreversible CONSEQUENCE, no evidence can clear it ----------
+Check 'ABSOLUTE: destructive SQL in the diff is human-only even with full evidence' {
+  Write-Review -Repo 'acme/unprotected' -Pr 210 -Depth 'elevated' -Evidence $ALL_EVIDENCE
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 210 -State (New-PrState @{
+    files = @(@{ path = 'db/migrations/007.sql' })
+    patch = "diff --git a/db/migrations/007.sql`n+DROP TABLE customers;`n" })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'HUMAN_ONLY_ACTION'
+}
+Check 'ABSOLUTE: removing deletion_protection is human-only even with full evidence' {
+  Write-Review -Repo 'acme/unprotected' -Pr 211 -Depth 'elevated' -Evidence $ALL_EVIDENCE
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 211 -State (New-PrState @{
+    files = @(@{ path = 'infra/terraform/rds.tf' })
+    patch = "diff --git a/infra/terraform/rds.tf`n-  deletion_protection = true`n+  deletion_protection = false`n" })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'HUMAN_ONLY_ACTION'
+}
+Check 'ABSOLUTE: added credential material is human-only even with full evidence' {
+  Write-Review -Repo 'acme/unprotected' -Pr 212 -Depth 'elevated' -Evidence $ALL_EVIDENCE
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 212 -State (New-PrState @{
+    files = @(@{ path = 'services/.env' })
+    patch = "diff --git a/services/.env`n+AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF`n" })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'HUMAN_ONLY_ACTION'
+}
+Check 'PROPORTIONALITY: an ordinary IaC edit (tag rename) is elevated, NOT human-only' {
+  Write-Review -Repo 'acme/unprotected' -Pr 213 -Depth 'elevated' -Evidence $ALL_EVIDENCE
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 213 -State (New-PrState @{
+    files = @(@{ path = 'infra/terraform/tags.tf' })
+    patch = "diff --git a/infra/terraform/tags.tf`n-  Owner = `"old`"`n+  Owner = `"new`"`n" })
+  Assert-Verdict $r 'ALLOW'
+  Assert-Equal $r.risk_tier 'elevated' 'risk_tier'
+}
+
+# ---- MARKERS: evidence to be adjudicated, never silently stripped ----------
+Check 'MARKER: adjudicated as still applicable => BLOCK' {
+  Write-Review -Repo 'acme/unprotected' -Pr 220 -Depth 'elevated' -Evidence $ALL_EVIDENCE `
+    -Marker @{ placed_by = 'security-routine'; reason = 'auth path unverified'; still_valid = $true; consequence_is_human_only = $false }
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 220 -State (New-PrState @{ title = 'fix [REQUIRES HUMAN REVIEW]' })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'MARKER_STILL_VALID'
+}
+Check 'MARKER: adjudicated as a genuine human-only consequence => BLOCK HUMAN_ONLY_ACTION' {
+  Write-Review -Repo 'acme/unprotected' -Pr 221 -Depth 'elevated' -Evidence $ALL_EVIDENCE `
+    -Marker @{ placed_by = 'alex'; reason = 'rotates a live production credential'; still_valid = $false; consequence_is_human_only = $true }
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 221 -State (New-PrState @{ title = 'x [REQUIRES HUMAN REVIEW]' })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'HUMAN_ONLY_ACTION'
+}
+Check 'MARKER: superseded blanket policy + reversible consequence => ALLOW, reasoning on record' {
+  Write-Review -Repo 'acme/unprotected' -Pr 222 -Depth 'elevated' -Evidence $ALL_EVIDENCE `
+    -Marker @{ placed_by = 'CLAUDE.base.md s7 blanket policy'; reason = 'generic marker for any security-labelled change'
+               still_valid = $false; superseded_by = 'operator authority 2026-08-08'; consequence_is_human_only = $false }
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 222 -State (New-PrState @{ title = 'fix(security): x [REQUIRES HUMAN REVIEW]' })
+  Assert-Verdict $r 'ALLOW'
+}
+Check 'MARKER: adjudication without placed_by/reason is incomplete => BLOCK' {
+  Write-Review -Repo 'acme/unprotected' -Pr 223 -Depth 'elevated' -Evidence $ALL_EVIDENCE `
+    -Marker @{ still_valid = $false; consequence_is_human_only = $false }
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 223 -State (New-PrState @{ title = 'x [DO NOT MERGE]' })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'MARKER_ADJUDICATION_INCOMPLETE'
+}
+Check 'MARKER: unknown still_valid defaults to still-applicable (fail closed)' {
+  Write-Review -Repo 'acme/unprotected' -Pr 224 -Depth 'elevated' -Evidence $ALL_EVIDENCE `
+    -Marker @{ placed_by = 'x'; reason = 'y' }   # both flags omitted
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 224 -State (New-PrState @{ title = 'x [REQUIRES HUMAN REVIEW]' })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'HUMAN_ONLY_ACTION'
+}
+
+# ---- SCOPE: proportionate evidence, not a hard ceiling --------------------
+Check 'SCOPE: a large generated batch reaches ALLOW with full diff review + second pass' {
+  Write-Review -Repo 'acme/unprotected' -Pr 230 -Depth 'elevated' -Evidence $ALL_EVIDENCE
+  $many = 1..42 | ForEach-Object { @{ path = "routines/prompts/r$_/SKILL.md" } }
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 230 -State (New-PrState @{ files = $many; additions = 2200 })
+  Assert-Verdict $r 'ALLOW'
+  Assert-Equal $r.scope_elevated $true 'scope_elevated'
+}
+Check 'SCOPE: >3x ceiling without second_review_pass => BLOCK' {
+  $noSecond = $ALL_EVIDENCE.Clone(); $noSecond.Remove('second_review_pass')
+  Write-Review -Repo 'acme/unprotected' -Pr 231 -Depth 'elevated' -Evidence $noSecond
+  $many = 1..130 | ForEach-Object { @{ path = "src/f$_.ts" } }
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 231 -State (New-PrState @{ files = $many; additions = 3000 })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'SECOND_REVIEW_REQUIRED'
+}
+Check 'SCOPE: an ordinary small change needs no elevated review at all' {
+  Write-Review -Repo 'acme/unprotected' -Pr 232
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 232 -State (New-PrState)
+  Assert-Verdict $r 'ALLOW'
+  Assert-Equal $r.risk_tier 'ordinary' 'risk_tier'
 }
 
 Remove-Item -Recurse -Force $sandbox -ErrorAction SilentlyContinue
