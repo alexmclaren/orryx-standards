@@ -39,7 +39,7 @@ safe is the part with the tests.
 | `cycle-lock.ps1` | Single-owner lock with stale/dead-PID recovery | Lock file only |
 | `cycle-metrics.ps1` | Append cycle events; render the per-day operator summary | Append-only |
 | `cycle-time.ps1` | Shared timestamp handling (dot-sourced). Read this before touching any date logic | No |
-| `Test-CycleGate.ps1` | 41 assertions over the gate. Run before trusting a change | No |
+| `Test-CycleGate.ps1` | 46 assertions over the gate. Run before trusting a change | No |
 
 ## Quick start
 
@@ -217,10 +217,11 @@ Adding a gate criterion:
 1. Add the check, calling `Deny <CODE> <detail>` — never return early, so every
    independent failure surfaces in one pass.
 2. Add a test to `Test-CycleGate.ps1` asserting `BLOCK` **and** the reason code.
-3. Run the suite. 41 assertions currently pass; keep it at zero failures.
+3. Run the suite. 46 assertions currently pass; keep it at zero failures.
 
 Tests inject state via `-InputObject`, so no network is needed. `Prop` handles
 both `PSCustomObject` (real `gh` output) and hashtables (injected state) — a
 dictionary-blind version silently read every injected field as absent, which
 presented as "no files changed, no checks ran" and disabled the risk scan.
+
 
