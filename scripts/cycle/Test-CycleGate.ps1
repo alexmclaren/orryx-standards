@@ -349,6 +349,60 @@ Check 'every failing criterion is reported, not just the first' {
   }
 }
 
+# ---- falsification regressions (2026-08-08 commissioning) ------------------
+# Each of these ALLOWed before the fix. They are the reason the gate is trusted.
+function Remove-Field { param([psobject]$O, [string]$Name) $O.PSObject.Properties.Remove($Name); return $O }
+
+Check 'FALSIFY F1: absent additions must BLOCK, not default to 0 and pass scope' {
+  Write-Review -Repo 'acme/unprotected' -Pr 100
+  $s = Remove-Field (New-PrState @{ files = @(@{ path = 'src/a.ts' }, @{ path = 'src/b.ts' }) }) 'additions'
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 100 -State $s
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'ADDITIONS_UNKNOWN'
+}
+Check 'FALSIFY F5: absent reviewThreads must BLOCK, not read as "no unresolved threads"' {
+  Write-Review -Repo 'acme/unprotected' -Pr 101
+  $s = Remove-Field (New-PrState) 'reviewThreads'
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 101 -State $s
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'REVIEW_THREADS_UNVERIFIED'
+}
+Check 'FALSIFY F2a: lowercase mergeable must not satisfy MERGEABLE' {
+  Write-Review -Repo 'acme/unprotected' -Pr 102
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 102 -State (New-PrState @{ mergeable = 'mergeable' })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'NOT_MERGEABLE'
+}
+Check 'FALSIFY F2b: lowercase mergeStateStatus must not satisfy CLEAN' {
+  Write-Review -Repo 'acme/unprotected' -Pr 103
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 103 -State (New-PrState @{ mergeStateStatus = 'clean' })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'MERGE_STATE_NOT_CLEAN'
+}
+Check 'FALSIFY F7: lowercase review verdict must not satisfy APPROVE' {
+  Write-Review -Repo 'acme/unprotected' -Pr 104 -Verdict 'approve'
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 104 -State (New-PrState)
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'REVIEW_NOT_APPROVED'
+}
+Check 'FALSIFY: a review for a different PR number is not reused' {
+  Write-Review -Repo 'acme/unprotected' -Pr 1050          # note: 1050, not 105
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 105 -State (New-PrState)
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'NO_INDEPENDENT_REVIEW'
+}
+Check 'FALSIFY: absent statusCheckRollup property blocks like an empty one' {
+  Write-Review -Repo 'acme/unprotected' -Pr 106
+  $s = Remove-Field (New-PrState) 'statusCheckRollup'
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 106 -State $s
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'NO_CI_EVIDENCE'
+}
+Check 'FALSIFY: legacy commit-status shape with state=PENDING blocks' {
+  Write-Review -Repo 'acme/unprotected' -Pr 107
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 107 -State (New-PrState @{
+    statusCheckRollup = @(@{ context = 'legacy-ci'; state = 'PENDING' }) })
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'CI_NOT_GREEN'
+}
+Check 'FALSIFY: reviewer differing only by case is still self-approval' {
+  Write-Review -Repo 'acme/unprotected' -Pr 108 -Reviewer 'Same' -AuthoredBy 'same'
+  $r = Invoke-Gate -Repo 'acme/unprotected' -Pr 108 -State (New-PrState)
+  Assert-Verdict $r 'BLOCK'; Assert-Reason $r 'REVIEW_NOT_INDEPENDENT'
+}
+
 Remove-Item -Recurse -Force $sandbox -ErrorAction SilentlyContinue
 
 Write-Host ""

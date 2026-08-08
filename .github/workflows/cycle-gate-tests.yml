@@ -63,6 +63,13 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File scripts/cycle/Test-CycleGate.ps1
 
+      - name: Timestamp-handling self-test
+        shell: pwsh
+        # Guards the ConvertFrom-Json coercion trap. A regression here removes the
+        # runner's mutual exclusion without failing any other test, because it made
+        # cycle-lock read every lock as stale.
+        run: pwsh -NoProfile -File scripts/cycle/Test-CycleTime.ps1
+
       - name: Assert the gate still fails closed with no arguments beyond a bare PR
         shell: pwsh
         run: |

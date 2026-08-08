@@ -184,6 +184,15 @@ function Prop { param($o, [string]$n, $default = $null)
   return $default
 }
 
+# Presence test, distinct from Prop. Needed wherever "field absent" must BLOCK
+# rather than fall back to a default — a default that happens to be permissive
+# (additions=0, threads=@()) turns a missing field into a silent pass.
+function HasProp { param($o, [string]$n)
+  if ($null -eq $o) { return $false }
+  if ($o -is [System.Collections.IDictionary]) { return ($o.Contains($n) -and $null -ne $o[$n]) }
+  return (($o.PSObject.Properties.Name -contains $n) -and ($null -ne $o.$n))
+}
+
 $headSha    = Prop $prState 'headRefOid'
 $files      = @(Prop $prState 'files' @())
 $paths      = @($files | ForEach-Object { Prop $_ 'path' } | Where-Object { $_ })
@@ -205,8 +214,12 @@ $riskFlags   = Get-RiskFlags  -Paths $paths
 if ($isDraft) { Deny 'IS_DRAFT' 'PR is a draft; drafts are never auto-merged.' }
 
 # --- C2  mergeable / no conflicts -------------------------------------------
-if ($mergeable -ne 'MERGEABLE') { Deny 'NOT_MERGEABLE' "mergeable=$mergeable (need MERGEABLE)." }
-if ($mergeState -ne 'CLEAN') {
+# -cne, not -ne. PowerShell comparisons are case-INSENSITIVE by default, so
+# mergeable='mergeable' and mergeStateStatus='clean' both passed (falsification
+# F2/F7, 2026-08-08). GitHub returns uppercase so it was not exploitable via the
+# API, but a safety comparison must assert what it appears to assert.
+if ($mergeable -cne 'MERGEABLE') { Deny 'NOT_MERGEABLE' "mergeable=$mergeable (need exactly MERGEABLE)." }
+if ($mergeState -cne 'CLEAN') {
   # BEHIND is recoverable by an update; DIRTY needs conflict resolution; UNSTABLE
   # means a check is failing; UNKNOWN means GitHub has not finished computing.
   Deny 'MERGE_STATE_NOT_CLEAN' "mergeStateStatus=$mergeState (need CLEAN)."
@@ -276,8 +289,14 @@ if ($declared -and (Prop $declared 'expected')) {
 
 # --- C5  no blocking review state / unresolved threads ----------------------
 if ($reviewDec -eq 'CHANGES_REQUESTED') { Deny 'CHANGES_REQUESTED' 'A reviewer requested changes.' }
+# An ABSENT reviewThreads property is not "no unresolved threads". On the live
+# path GraphQL populates it (and sets $threadsVerified=$false on failure), but with
+# -InputObject — the path the runner uses to avoid re-fetching — a state object
+# lacking the field silently satisfied C5 entirely (falsification F5, 2026-08-08).
+if (-not (HasProp $prState 'reviewThreads')) { $threadsVerified = $false }
+
 if (-not $threadsVerified) {
-  Deny 'REVIEW_THREADS_UNVERIFIED' 'Could not determine review-thread resolution state (GraphQL query failed); refusing to assume there are none.'
+  Deny 'REVIEW_THREADS_UNVERIFIED' 'Review-thread resolution state could not be established (GraphQL failed, or the supplied PR state has no reviewThreads field); refusing to assume there are none.'
 } else {
   $unresolved = @($threads | Where-Object { -not [bool](Prop $_ 'isResolved' $false) })
   if ($unresolved.Count -gt 0) { Deny 'UNRESOLVED_REVIEW_THREADS' "$($unresolved.Count) unresolved review thread(s)." }
@@ -317,6 +336,12 @@ if ($declaredHuman.Count -gt 0) {
 if ($files.Count -gt $MaxFiles)     { Deny 'SCOPE_TOO_MANY_FILES' "$($files.Count) files changed (ceiling $MaxFiles)." }
 if ($additions -gt $MaxAdditions)   { Deny 'SCOPE_TOO_MANY_ADDITIONS' "$additions additions (ceiling $MaxAdditions)." }
 if ($files.Count -eq 0)             { Deny 'NO_FILES_REPORTED' 'No changed files reported; cannot assess scope or risk.' }
+# Absent additions defaulted to 0, which PASSES the ceiling — so a PR touching
+# few files could carry an arbitrarily large diff through C7 unmeasured
+# (falsification F1, 2026-08-08). Unknown size must block, not pass.
+if (-not (HasProp $prState 'additions')) {
+  Deny 'ADDITIONS_UNKNOWN' 'The PR state reports no additions count; diff size cannot be assessed, so the scope ceiling cannot be applied.'
+}
 
 # --- C8  independent, SHA-pinned review ------------------------------------
 $reviewDir  = Join-Path $StateRoot 'reviews'
@@ -336,7 +361,9 @@ if ($review) {
   $authoredBy= [string](Prop $review 'authored_by' '')
   if (-not $headSha)                { Deny 'HEAD_SHA_UNKNOWN' 'Cannot confirm the review matches the current tree.' }
   elseif ($rSha -ne $headSha)       { Deny 'REVIEW_STALE' "review approved $rSha but PR head is $headSha; new commits invalidate the review." }
-  if ($rVerdict -ne 'APPROVE')      { Deny 'REVIEW_NOT_APPROVED' "review verdict=$rVerdict (need APPROVE)." }
+  # -cne: 'approve' must not satisfy 'APPROVE' (falsification F7). A review
+  # artifact is a machine contract; loose casing means loose parsing.
+  if ($rVerdict -cne 'APPROVE')     { Deny 'REVIEW_NOT_APPROVED' "review verdict=$rVerdict (need exactly APPROVE)." }
   if (-not $reviewer)               { Deny 'REVIEW_NO_REVIEWER' 'review artifact does not record a reviewer identity.' }
   if ($reviewer -and $authoredBy -and $reviewer -eq $authoredBy) {
     Deny 'REVIEW_NOT_INDEPENDENT' "reviewer '$reviewer' is the same identity that authored the change."
