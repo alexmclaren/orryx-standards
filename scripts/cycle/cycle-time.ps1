@@ -91,3 +91,58 @@ function Get-UtcStamp {
   param([datetime]$Utc = ((Get-Date).ToUniversalTime()))
   return $Utc.ToString('yyyy-MM-ddTHH:mm:ssZ')
 }
+
+# --- HP-33: runs that outlive the day they started in -----------------------
+#
+# Observed twice, worsening: a scheduled-task session slept mid-run and finished
+# on the NEXT local day (10h41m on 2026-08-06, 16h28m on 2026-08-07). Neither was
+# clock skew — w32tm synced, no reboot, and sibling routines appended exit rows
+# while the session idled.
+#
+# It is not a hang either. Each routine run takes roughly an hour and the
+# dispatcher is serial (FH-77), so a long run crossing midnight is ordinary. The
+# harm is not the duration — it is that a run finishing after midnight labels its
+# artifact with "today", which is the wrong day, and its own consumers then cannot
+# glob the input they need.
+#
+# So the correction is NOT to reap long-running sessions (that would strand
+# mid-write work). It is to derive the date label from WHEN THE RUN STARTED — the
+# scheduler's period — and to make boundary-crossing visible rather than silent.
+
+function Get-RunDateLabel {
+  <#
+    The LOCAL date label an artifact should carry: the day the run STARTED, not the
+    day it happens to finish. Pass the scheduler's lastRunAt (UTC).
+
+    Deriving the label from the clock at write time is the bug: it silently
+    reassigns a run to the following day and strands the previous day dark.
+  #>
+  param([Parameter(Mandatory = $true)][datetime]$RunStartUtc)
+  return Get-LocalDateLabel -Utc $RunStartUtc
+}
+
+function Test-RunCrossedDateBoundary {
+  <#
+    Reports whether a run has outlived the local day it began in, and by how much.
+    Returns an object rather than a bare bool so a routine can put real numbers in
+    its report instead of "seems slow".
+
+      crossed        - did the local date change since the run started
+      elapsed_hours  - wall-clock hours, rounded to 2dp
+      start_label    - the local date label the artifact SHOULD use
+      now_label      - the local date label a naive clock read WOULD use
+  #>
+  param(
+    [Parameter(Mandatory = $true)][datetime]$RunStartUtc,
+    [datetime]$NowUtc = ((Get-Date).ToUniversalTime())
+  )
+  $startLabel = Get-LocalDateLabel -Utc $RunStartUtc
+  $nowLabel   = Get-LocalDateLabel -Utc $NowUtc
+  return [pscustomobject]@{
+    crossed       = ($startLabel -ne $nowLabel)
+    elapsed_hours = [math]::Round(($NowUtc - $RunStartUtc).TotalHours, 2)
+    start_label   = $startLabel
+    now_label     = $nowLabel
+    correct_label = $startLabel
+  }
+}
