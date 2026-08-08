@@ -7,7 +7,25 @@ Run the Autonomous Cycle Runner. This is a state-based continuous loop, NOT a on
 
 The operator is not present. Execute autonomously.
 
-FIRST: read D:\orryx-standards\scripts\cycle\README.md (design rationale and the timestamp trap), then C:\Users\alexa\.claude\scheduled-tasks\_shared\PRODUCER_PRECHECK.md sections 1-5.
+PRECONDITION — CHECK THIS BEFORE ANYTHING ELSE. Test-Path D:\orryx-standards\scripts\cycle\cycle-gate.ps1. If it is ABSENT, do NOT improvise, do NOT search for a worktree copy, and do NOT proceed: the harness is not installed on the tree you run from. Emit this decision brief, log a halt metric with outcome=harness_not_installed, append the exit row as SKIP, and stop:
+
+  HALT: cycle harness scripts are not present at D:\orryx-standards\scripts\cycle
+  Evidence: Test-Path D:\orryx-standards\scripts\cycle\cycle-gate.ps1 = False.
+            The harness lives on PR #24 (branch wt/cycle-harness) which is human-gated
+            by its own gate: HUMAN_ONLY_SURFACE (ci_or_policy, it adds a workflow) plus
+            SCOPE_TOO_MANY_ADDITIONS. It has passed CI (gate-tests) and independent review.
+  Options:  1) merge PR #24, then ensure D:\orryx-standards has main checked out
+            2) leave disarmed until then
+  Recommendation: (1)
+  Smallest human action: merge PR #24 and update the D:\orryx-standards working tree
+
+  Why this check exists: commissioning on 2026-08-08 found the runner pointed at a path
+  that did not exist. D:\orryx-standards sits on fix/briefing-fold-and-slot-recovery and
+  scripts/cycle is not on origin/main, so the very first fire would have failed on a
+  missing file with no useful signal. Failing loudly here is the difference between a
+  clear one-line human action and a silent dead routine.
+
+THEN: read D:\orryx-standards\scripts\cycle\README.md (design rationale and the timestamp trap), then C:\Users\alexa\.claude\scheduled-tasks\_shared\PRODUCER_PRECHECK.md sections 1-5.
 
 ARMING (fail-closed): read D:\state\cycles\ARMED.json. If absent or armed=false, run the FULL cycle but call cycle-merge.ps1 WITHOUT -Execute, and report which PRs WOULD have merged. Only if armed=true pass -Execute. Never create or edit that file.
 
@@ -42,7 +60,12 @@ ON EVERY HALT emit a decision brief: HALT (one-line issue) / Evidence (paths, PR
 
 RESILIENCE: never select the same repo#pr twice in one run; re-read live state before acting (another session may have resolved it); an 'attempt' evidence file with no 'merged'/'failed' sibling means a merge outcome is UNKNOWN - re-read live PR state, never blind-retry; max 2 remediation attempts per item per run; treat rate limits and CI delay as CI_INCOMPLETE and move on.
 
-IDLE IS A FAILURE TO REPORT: if the actionable queue was non-empty and you merged nothing, log an idle metric row with queue_depth=N and say so plainly in the report.
+LOCKFILE SIBLINGS - measured 2026-08-08, affects cycle yield. Merging one PR that touches package-lock.json flips its siblings in the SAME repo from CLEAN to DIRTY, because they all edit the same file. Observed live: merging orryx-mcp-gateway#51 immediately made #59 DIRTY. Dependabot then auto-rebases them and CI re-runs, which took roughly one minute for #48 - so it is self-healing, but not instantly. Consequences for your loop:
+  - After a merge that touched a lockfile, PREFER A DIFFERENT REPO for the next cycle. Draining nine lockfile PRs from one repo back-to-back will mostly produce DIRTY and CI_INCOMPLETE blocks, not merges.
+  - CI_INCOMPLETE right after a merge is expected, not a failure. Move on and let the next cycle pick it up.
+  - Never "fix" a DIRTY dependabot PR yourself. Let dependabot rebase it.
+
+IDLE IS A FAILURE TO REPORT: if the actionable queue was non-empty and you merged nothing, log an idle metric row with queue_depth=N and say so plainly in the report. But a queue that is non-empty only because siblings are mid-rebase after your own merge is NOT idleness - say which, and do not double-count it as a failure.
 
 OUTPUT: D:\reports\evolution\cycle-runner-{LOCAL-date}.md, leading with a section 0 delta. Include cycles run; tasks selected; merges with PR links (or would-have-merged when disarmed); gate blocks with reason codes; reviews and verdicts; halt cause; the cycle-metrics.ps1 -Summary table; and the recommended next task. Date LABELS are LOCAL (Australia/Brisbane UTC+10, no DST); timestamps stay UTC with Z.
 
