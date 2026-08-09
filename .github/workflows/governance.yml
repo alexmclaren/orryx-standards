@@ -1,11 +1,27 @@
-# First CI in this repository. It exists to stop governance.yaml drifting away
-# from reality again — that drift went unnoticed for eleven weeks because nothing
-# ever read the file.
+# Stops governance.yaml drifting away from reality again — that drift went
+# unnoticed for eleven weeks because nothing ever read the file.
+#
+# CORRECTION: an earlier commit message called this "the first CI in this
+# repository". That is true of `main`, which has no .github at all, and wrong
+# about the repository. Two open PRs already add workflows:
+#   #24 wt/cycle-harness       .github/workflows/cycle-gate-tests.yml
+#   #23 chore/mirror-drift-ci  .github/workflows/mirror-drift.yml
+# This is the third concurrent branch adding CI here. The filenames do not
+# collide so they can land independently, but whoever merges first sets the
+# convention and none of the three was authored aware of the other two.
 #
 # Must run on pull_request as well as push: a required check that does not
-# trigger on PRs deadlocks every PR. If this is later made a required check,
-# enumerate the exact context name from the check-runs API rather than
-# transcribing it — the name must match byte-for-byte.
+# trigger on PRs deadlocks every PR. This workflow also deliberately has NO
+# `paths:` filter — a path-filtered check that is later marked *required* never
+# reports on PRs outside those paths, which deadlocks them just as thoroughly.
+#
+# If these are ever made required checks, take the context strings from the
+# check-runs API rather than transcribing them. GitHub reports a job's `name:`
+# when set and its job id otherwise, so requiring a workflow *name* against a
+# reported job id is the trap recorded in D:\state\branch-protection.json.
+# The contexts reported here are:
+#     hook_scripts_exist
+#     Secret scan (full tree, blocking)
 name: governance
 
 on:
