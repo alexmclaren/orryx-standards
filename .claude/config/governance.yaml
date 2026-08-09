@@ -24,74 +24,113 @@ version: "1.0.0"
 #   5. Fail fast when stuck, escalate intelligently
 #
 # Principles:
-#   - Soft gates for guidance (warnings)
-#   - Hard gates for critical issues (blocks)
-#   - Progressive enforcement (warn → soft block → hard block)
-#   - Escape hatches for legitimate overrides (with logging)
+#   - A level is a claim about what runs, not about what matters.
+#   - "hard" requires an executable that exists, is registered, blocks on
+#     failure, and has a test proving it blocks. All four, or it is not hard.
+#   - Everything else is "documented": a rule a human or agent is expected to
+#     follow. Honest, useful, and not pretending to be a gate.
+#   - This file must describe reality. `scripts/check-governance-hooks.mjs`
+#     enforces that in CI.
+#
+# Amended 2026-08-09 (see decisions/, and orryx-control-plane
+# docs/pilot/PLAN-2026-08-09-executor-boundary-next.md §A):
+#
+# From 2026-05-18 to 2026-08-09 this file declared thirteen hooks, four systems
+# at enforcement_level "hard" and can_override: false. Nine of the thirteen
+# scripts were never written — git shows zero commits for those filenames across
+# all refs — and no settings.json has ever existed in this repository, so the
+# four that do exist never fired either. Every "hard" was a string.
+#
+# The nine declarations are removed rather than stubbed: nothing was deleted, so
+# there is nothing to recover, and five of them named lifecycle phases
+# (pre_planning, pre_debugging, post_story) that have no counterpart in Claude
+# Code's tool- and session-scoped event model, so they could not have been built
+# as declared at any effort. execution-budget-check is not missing but moved: it
+# shipped as orryx-control-plane executor/src/budget.js, enforced by the control
+# plane's own clock.
+#
+# Intent for the rest is tracked in HA-070, not in a field that lies.
 
 # ============================================================================
 # GOVERNANCE SYSTEMS
 # ============================================================================
 
+# Every system is "documented" as of 2026-08-09. None has an executable that
+# blocks, so none may claim "hard" — see ENFORCEMENT LEVELS below. A system earns
+# "hard" back by shipping a registered, blocking hook with a test, one at a time.
 systems:
   context_management:
     enabled: true
     config_file: ".claude/config/context-budget.yaml"
-    enforcement_level: "hard"  # hard | soft | warn
-    description: "Enforces token budgets and prevents context bloat"
+    enforcement_level: "documented"  # hard | documented
+    description: "Token budgets and context-bloat guidance"
 
   read_before_edit:
     enabled: true
     config_file: ".claude/config/read-before-edit.yaml"
-    enforcement_level: "hard"
+    enforcement_level: "documented"
     description: "Mandates exploration before file modifications"
+    # Nearest to earning "hard": PreToolUse on Edit|Write is a real event and the
+    # rule is already in CLAUDE.base.md §11. Tracked in HA-070.
 
   execution_budgets:
     enabled: true
     config_file: ".claude/config/execution-budgets.yaml"
-    enforcement_level: "hard"
-    description: "Limits retry attempts and prevents infinite loops"
+    enforcement_level: "documented"
+    description: "Retry limits and loop detection"
+    # Enforced for delegated execution by orryx-control-plane
+    # executor/src/budget.js, against the control plane's own clock. This file
+    # remains guidance for interactive sessions.
 
   memory_integration:
     enabled: true
     config_file: ".claude/config/memory-freshness.yaml"
-    enforcement_level: "soft"
+    enforcement_level: "documented"
     description: "Pinecone memory retrieval and freshness management"
 
   quality_gates:
     enabled: true
-    enforcement_level: "hard"
-    description: "Pre-commit quality checks (lint, types, tests, security)"
+    enforcement_level: "documented"
+    description: "Quality checks (lint, types, tests, security)"
+    # Destination is CI, not a Claude Code hook — a commit gate belongs where it
+    # cannot be skipped by choosing a different client. This repository has no
+    # CI beyond .github/workflows/governance.yml; building it is HA-070.
 
   codeburn_monitoring:
     enabled: true
     config_file: ".claude/config/codeburn.yaml"
-    enforcement_level: "warn"
-    description: "Real-time session monitoring and alerts"
+    enforcement_level: "documented"
+    description: "Session monitoring and alerts"
 
 # ============================================================================
 # ENFORCEMENT LEVELS
 # ============================================================================
 
+# Two levels, because only two are observable. "soft" and "warn" were removed on
+# 2026-08-09: nothing read this file, so the difference between blocking-with-
+# override and warning-then-continuing had never once been visible in practice.
+#
+# Removing a level here mechanically retires every claim to it —
+# check-governance-hooks.mjs fails on any enforcement_level not declared below.
 enforcement_levels:
   hard:
-    description: "Blocks execution until resolved"
+    description: >
+      Blocks execution until resolved. Requires ALL of: the executable exists,
+      it is registered in a settings.json or workflow, it exits non-zero on
+      failure, and a test asserts that it blocks. Absent any one, use
+      "documented" instead — a level is a claim about what runs.
     can_override: false
     logs: true
     alerts: true
 
-  soft:
-    description: "Blocks but allows override with justification"
-    can_override: true
-    requires_justification: true
-    logs: true
-    alerts: true
-
-  warn:
-    description: "Warns but allows continuation"
+  documented:
+    description: >
+      A rule a human or agent is expected to follow, recorded in CLAUDE.base.md
+      or a config file, with nothing that enforces it automatically. Not a gate,
+      and must not be described as one.
     can_override: true
     requires_justification: false
-    logs: true
+    logs: false
     alerts: false
 
 # ============================================================================
@@ -100,93 +139,50 @@ enforcement_levels:
 #
 # Defines when hooks are triggered and in what order
 
+# NOTHING HERE IS REGISTERED WITH CLAUDE CODE.
+#
+# Claude Code discovers hooks through a settings.json and nothing else, and no
+# settings.json has ever existed in this repository. The four scripts below are
+# real files, invoked manually via `npm run` from .claude/hooks/package.json —
+# useful, but they are scripts, not hooks. `enabled: false` says so.
+#
+# The phase names below (pre_planning, pre_edit, pre_debugging, post_story) are
+# this file's own vocabulary and do NOT correspond to Claude Code events, which
+# are tool- and session-scoped: PreToolUse, PostToolUse, UserPromptSubmit, Stop,
+# SessionStart, SessionEnd, PreCompact, Notification. Only pre_edit (PreToolUse,
+# matcher Edit|Write) and post_story (Stop/SessionEnd) have a mapping at all.
+# Anything registered here must be re-expressed in that vocabulary first.
 hooks:
   # Before Planning
   pre_planning:
     - name: "memory-retrieval"
       script: ".claude/hooks/pre-planning-memory-retrieval.ts"
-      enabled: true
+      enabled: false  # exists; not registered; no Claude Code "planning" event
       blocking: false
       timeout_seconds: 30
-
-    - name: "context-budget-check"
-      script: ".claude/hooks/context-budget-check.ts"
-      enabled: true
-      blocking: true
-      timeout_seconds: 5
 
   # Before Edit
   pre_edit:
     - name: "memory-retrieval"
       script: ".claude/hooks/pre-edit-memory-retrieval.ts"
-      enabled: true
+      enabled: false  # exists; not registered. Maps to PreToolUse Edit|Write.
       blocking: false
       timeout_seconds: 20
-
-    - name: "read-before-edit-gate"
-      script: ".claude/hooks/read-before-edit-gate.ts"
-      enabled: true
-      blocking: true
-      timeout_seconds: 5
-
-    - name: "dependency-check"
-      script: ".claude/hooks/dependency-check.ts"
-      enabled: true
-      blocking: false
-      timeout_seconds: 10
 
   # Before Debugging
   pre_debugging:
     - name: "memory-retrieval"
       script: ".claude/hooks/pre-debugging-memory-retrieval.ts"
-      enabled: true
+      enabled: false  # exists; not registered; no Claude Code "debugging" event
       blocking: false
       timeout_seconds: 30
-
-    - name: "execution-budget-check"
-      script: ".claude/hooks/execution-budget-check.ts"
-      enabled: true
-      blocking: true
-      timeout_seconds: 5
 
   # After Story
   post_story:
     - name: "memory-write"
       script: ".claude/hooks/post-story-memory-write.ts"
-      enabled: true
+      enabled: false  # exists; not registered. Maps to Stop/SessionEnd.
       blocking: false
-      timeout_seconds: 60
-
-    - name: "session-metrics-log"
-      script: ".claude/hooks/session-metrics-log.ts"
-      enabled: true
-      blocking: false
-      timeout_seconds: 10
-
-  # Pre-Commit
-  pre_commit:
-    - name: "lint-check"
-      script: ".claude/hooks/pre-commit-lint.ts"
-      enabled: true
-      blocking: true
-      timeout_seconds: 60
-
-    - name: "type-check"
-      script: ".claude/hooks/pre-commit-types.ts"
-      enabled: true
-      blocking: true
-      timeout_seconds: 60
-
-    - name: "test-check"
-      script: ".claude/hooks/pre-commit-tests.ts"
-      enabled: true
-      blocking: true
-      timeout_seconds: 300
-
-    - name: "security-scan"
-      script: ".claude/hooks/pre-commit-security.ts"
-      enabled: true
-      blocking: true
       timeout_seconds: 60
 
 # ============================================================================

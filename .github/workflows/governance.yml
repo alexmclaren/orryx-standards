@@ -1,0 +1,38 @@
+# First CI in this repository. It exists to stop governance.yaml drifting away
+# from reality again — that drift went unnoticed for eleven weeks because nothing
+# ever read the file.
+#
+# Must run on pull_request as well as push: a required check that does not
+# trigger on PRs deadlocks every PR. If this is later made a required check,
+# enumerate the exact context name from the check-runs API rather than
+# transcribing it — the name must match byte-for-byte.
+name: governance
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  hook-scripts-exist:
+    name: hook_scripts_exist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # No install step: the checker has zero dependencies, by design. This repo
+      # has no root package.json and does not need one for this.
+      # The checker's own failure modes are all silent-pass shaped, so it is
+      # tested before it is trusted.
+      - name: Test the checker
+        run: node --test scripts/check-governance-hooks.test.mjs
+
+      - name: Check governance.yaml describes reality
+        run: node scripts/check-governance-hooks.mjs
