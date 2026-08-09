@@ -70,8 +70,27 @@ systems:
     config_file: ".claude/config/read-before-edit.yaml"
     enforcement_level: "documented"
     description: "Mandates exploration before file modifications"
-    # Nearest to earning "hard": PreToolUse on Edit|Write is a real event and the
-    # rule is already in CLAUDE.base.md §11. Tracked in HA-070.
+    # Stays documented on purpose — assessed 2026-08-09, not deferred.
+    #
+    # 1. The blocking item is already enforced natively. read-before-edit.yaml's
+    #    checklist item 1 (read_target_file, required, blocking) is what Claude
+    #    Code's Edit tool does on its own: editing a file not read this session
+    #    fails. A hook would duplicate it.
+    # 2. Most of the config is not machine-checkable. confidence_threshold 0.7,
+    #    "How confident are you in this change? (1-10)", understanding_check,
+    #    impact_analysis — these are model self-reports, not facts a hook can
+    #    verify. Gating on them is self-certification, which is precisely what
+    #    the executor boundary refuses: adjudicate() ignores an executor's own
+    #    completion claim for the same reason.
+    # 3. minimum_reads_before_edit is a gameable proxy. Four reads of irrelevant
+    #    files satisfies it, and the by-task-type carve-outs (typo_fix 1 …
+    #    investigation 15) depend on classifying the task, which a hook cannot do.
+    #
+    # What is real, checkable and not natively covered: whether the associated
+    # test file was read. That is non-blocking, so it cannot earn "hard", and it
+    # cannot be justified before the read:edit ratio is actually measured —
+    # which is what session-metrics-log would provide. Sequence is therefore
+    # metrics first, gate second, if the metrics support one.
 
   execution_budgets:
     enabled: true
@@ -161,6 +180,20 @@ enforcement_levels:
 # settings.json has ever existed in this repository. The four scripts below are
 # real files, invoked manually via `npm run` from .claude/hooks/package.json —
 # useful, but they are scripts, not hooks. `enabled: false` says so.
+#
+# A HOOK BLOCK IN THIS REPOSITORY CANNOT GOVERN THE ESTATE.
+#
+# A project settings.json applies only to sessions working in the repository
+# that contains it. Registering these here would gate work on orryx-standards
+# itself and nothing else. Estate-wide coverage would mean propagating a
+# settings.json into every repository (propagate-harness.ps1 could), and even
+# then it is per-machine config a developer can edit and any non-Claude-Code
+# client ignores entirely.
+#
+# CI is strictly stronger: it lives in the repository, runs on the server, and
+# cannot be skipped by changing client or local settings. That is why
+# secret_scanning above is a workflow and not a hook, and it is the right
+# default for anything that needs to actually hold.
 #
 # The phase names below (pre_planning, pre_edit, pre_debugging, post_story) are
 # this file's own vocabulary and do NOT correspond to Claude Code events, which
