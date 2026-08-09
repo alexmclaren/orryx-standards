@@ -118,6 +118,46 @@ systems:
   assert.doesNotMatch(r.out, /no enforcement_levels: block found/);
 });
 
+test('fails when a system claims hard but declares no gate', () => {
+  const r = check(`${LEVELS}
+systems:
+  secret_scanning:
+    enforcement_level: "hard"
+`);
+  assert.equal(r.code, 1);
+  assert.match(r.out, /declares no gate/);
+});
+
+test('fails when a hard system names a gate that does not exist', () => {
+  const r = check(`${LEVELS}
+systems:
+  secret_scanning:
+    enforcement_level: "hard"
+    gate: ".github/workflows/nope.yml"
+`);
+  assert.equal(r.code, 1);
+  assert.match(r.out, /gate '.*nope\.yml' does not exist/);
+});
+
+test('accepts a hard system whose gate exists', () => {
+  const r = check(`${LEVELS}
+systems:
+  secret_scanning:
+    enforcement_level: "hard"
+    gate: ".github/workflows/governance.yml"
+`);
+  assert.equal(r.code, 0, r.out);
+});
+
+test('a documented system needs no gate', () => {
+  const r = check(`${LEVELS}
+systems:
+  quality_gates:
+    enforcement_level: "documented"
+`);
+  assert.equal(r.code, 0, r.out);
+});
+
 test('a later enabled: true outside the hooks list is not attributed to a hook', () => {
   const r = check(`${LEVELS}
 hooks:

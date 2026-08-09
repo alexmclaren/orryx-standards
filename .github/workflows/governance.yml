@@ -36,3 +36,57 @@ jobs:
 
       - name: Check governance.yaml describes reality
         run: node scripts/check-governance-hooks.mjs
+
+  secret-scan:
+    name: Secret scan (full tree, blocking)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Pinned CLI rather than a marketplace action: same approach as
+      # pillarworks-build-mvp/.github/workflows/secret-scan-fulltree.yml, which
+      # is proven in the estate and carries no licence condition.
+      - name: Install gitleaks
+        run: |
+          GLV=8.21.2
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GLV}/gitleaks_${GLV}_linux_x64.tar.gz" -o gitleaks.tgz
+          tar -xzf gitleaks.tgz gitleaks
+          sudo mv gitleaks /usr/local/bin/
+          gitleaks version
+
+      # "hard" requires a test asserting the gate blocks. A scanner that has
+      # silently stopped matching reports the same green as a clean tree, so
+      # prove it still fires before trusting that it found nothing.
+      #
+      # The fixture is built at runtime, outside the repo: writing a literal
+      # that matches would make this workflow itself a finding. The directory
+      # name avoids the config's test/fixtures path allowlist.
+      - name: Self-test — the scanner must flag a known-bad fixture
+        run: |
+          mkdir -p /tmp/gl-probe
+          printf 'sk-ant-api03-%s\n' "$(head -c 90 /dev/zero | tr '\0' 'A')" > /tmp/gl-probe/probe.txt
+          if gitleaks detect --no-git --source /tmp/gl-probe \
+               -c "${GITHUB_WORKSPACE}/.gitleaks.toml" --exit-code 1 >/dev/null 2>&1; then
+            echo "SELF-TEST FAILED: gitleaks did not flag a known-bad fixture."
+            echo "The gate is not detecting. A green scan below would mean nothing."
+            exit 1
+          fi
+          echo "self-test passed: the gate still fires"
+
+      # --no-git scans files on disk, so a secret already sitting in HEAD is
+      # caught too — a diff-only scan reports green on those.
+      - name: Scan full working tree (blocking)
+        run: |
+          gitleaks detect --no-git --source . -c .gitleaks.toml \
+            --redact --verbose --exit-code 1 \
+            --report-format sarif --report-path gitleaks-report.sarif
+
+      - name: Upload findings (if any)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-report
+          path: gitleaks-report.sarif
+          if-no-files-found: ignore

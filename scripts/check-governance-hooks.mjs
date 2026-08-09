@@ -96,6 +96,22 @@ for (const block of blocks) {
   }
 }
 
+// --- 4: a system claiming "hard" must name a gate that exists ---------------
+// Without this, "hard" is checkable for hooks and free-text for systems, which
+// is most of how this file drifted the first time.
+const systemsSection = config.match(/^systems:\n((?:[ \t]+.*\n|\n)*)/m)?.[1] ?? '';
+const systemEntries = systemsSection.split(/^ {2}([a-z_]+):$/m).slice(1);
+for (let i = 0; i < systemEntries.length; i += 2) {
+  const [name, body] = [systemEntries[i], systemEntries[i + 1] ?? ''];
+  if (!/^\s*enforcement_level:\s*"?hard"?/m.test(body)) continue;
+  const gate = body.match(/^\s*gate:\s*"?([^"\n]+?)"?\s*$/m)?.[1];
+  if (!gate) {
+    failures.push(`system '${name}': enforcement_level "hard" but declares no gate:`);
+  } else if (!existsSync(join(repoRoot, gate))) {
+    failures.push(`system '${name}': gate '${gate}' does not exist`);
+  }
+}
+
 // --- 3: no claim to an enforcement level that is not in the vocabulary -------
 const vocabBlock = config.match(/^enforcement_levels:\n((?:[ \t]+.*\n|\n)*)/m)?.[1] ?? '';
 const vocabulary = [...vocabBlock.matchAll(/^ {2}([a-z_]+):/gm)].map((m) => m[1]);

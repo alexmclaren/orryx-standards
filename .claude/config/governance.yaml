@@ -88,13 +88,29 @@ systems:
     enforcement_level: "documented"
     description: "Pinecone memory retrieval and freshness management"
 
+  secret_scanning:
+    enabled: true
+    enforcement_level: "hard"
+    gate: ".github/workflows/governance.yml"
+    description: "Gitleaks, full working tree, blocking on push and PR"
+    # The first system in this repository to earn "hard": the gate exists, is
+    # registered in CI, exits non-zero on a finding, and self-tests against a
+    # known-bad fixture before trusting a clean result. Config is .gitleaks.toml,
+    # adopted 2026-08-09 from this repo's own templates/gitleaks.template.toml.
+
   quality_gates:
     enabled: true
     enforcement_level: "documented"
-    description: "Quality checks (lint, types, tests, security)"
-    # Destination is CI, not a Claude Code hook — a commit gate belongs where it
-    # cannot be skipped by choosing a different client. This repository has no
-    # CI beyond .github/workflows/governance.yml; building it is HA-070.
+    description: "Lint, types and tests — not yet gated anywhere"
+    # Security split out above as secret_scanning, which is now hard. The other
+    # three stay documented and belong in the repositories that have code to
+    # check, not here: this repo is 96 markdown files and 17 unwired TypeScript
+    # scripts, so linting and type-checking it would gate almost nothing.
+    # Shipping a reusable workflow for consuming repos is HA-070 follow-on.
+    #
+    # Note while here: .claude/hooks/package.json declares `test: tsx
+    # test-hooks.ts` and no test-hooks.ts exists — the same
+    # declared-but-absent pattern this commit is cleaning up.
 
   codeburn_monitoring:
     enabled: true
