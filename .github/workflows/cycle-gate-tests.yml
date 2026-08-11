@@ -1,0 +1,87 @@
+# CI for the autonomous cycle harness.
+#
+# Why this exists: this repo had NO workflows at all, so every PR reported
+# mergeStateStatus=CLEAN with zero checks — "nothing failed because nothing ran".
+# cycle-gate.ps1 deliberately refuses to treat that as green (NO_CI_EVIDENCE),
+# which means changes to the merge gate could never clear their own C3 criterion
+# and could never be verified by the very mechanism they govern.
+#
+# This workflow is that evidence. The job id below is what branch protection must
+# require — NOT the workflow name. Requiring a workflow *name* where GitHub
+# reports a *job id* deadlocks every PR against a check that never reports; that
+# trap is recorded in D:\state\branch-protection.json.
+#
+#   job id (use this in required contexts):  gate-tests
+#
+# Runs on ubuntu-latest: the suite injects PR state via -InputObject, so it makes
+# no gh calls, touches no D:\ path, and needs no Windows runner. Linux minutes are
+# what get billed, and Windows runners cost 2x for no benefit here.
+
+name: Cycle harness tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/cycle/**'
+      - '.github/workflows/cycle-gate-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/cycle/**'
+      - '.github/workflows/cycle-gate-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gate-tests:
+    name: gate-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse-check every cycle script
+        shell: pwsh
+        run: |
+          $failed = $false
+          Get-ChildItem scripts/cycle -Filter *.ps1 | ForEach-Object {
+            $errs = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$errs) | Out-Null
+            if ($errs.Count) {
+              $failed = $true
+              Write-Host "::error file=$($_.FullName)::$($errs.Count) parse error(s): $($errs[0].Message)"
+            } else {
+              Write-Host "ok  $($_.Name)"
+            }
+          }
+          if ($failed) { exit 1 }
+
+      - name: Merge-gate self-test
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/cycle/Test-CycleGate.ps1
+
+      - name: Timestamp-handling self-test
+        shell: pwsh
+        # Guards the ConvertFrom-Json coercion trap. A regression here removes the
+        # runner's mutual exclusion without failing any other test, because it made
+        # cycle-lock read every lock as stale.
+        run: pwsh -NoProfile -File scripts/cycle/Test-CycleTime.ps1
+
+      - name: Assert the gate still fails closed with no arguments beyond a bare PR
+        shell: pwsh
+        run: |
+          # Regression guard for the property that matters most: an unknown/empty
+          # PR state must BLOCK, never ALLOW. If someone refactors the gate into
+          # returning ALLOW-by-default, this catches it even if they also edited
+          # the main suite.
+          $empty = [pscustomobject]@{ number = 1 }
+          $v = & scripts/cycle/cycle-gate.ps1 -Repo 'acme/none' -Pr 1 -InputObject $empty `
+                 -StateRoot ([IO.Path]::GetTempPath()) -ProtectionFile 'does-not-exist.json'
+          if ($v.verdict -ne 'BLOCK') {
+            Write-Host "::error::gate returned $($v.verdict) for an empty PR state; it MUST fail closed"
+            exit 1
+          }
+          Write-Host "fail-closed on empty state: BLOCK ($(($v.reasons | ForEach-Object { $_.code }) -join ','))"
