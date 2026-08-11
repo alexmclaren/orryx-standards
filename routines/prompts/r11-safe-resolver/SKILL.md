@@ -76,7 +76,7 @@ For each queue item, compute `input_age_days` against today using the `{date}` s
 | **DEGRADE** | `1 < input_age_days ≤ 3` | Do NOT auto-execute. Re-verify ground truth; if STILL true, downgrade to a **recommend-only** PR draft is not permitted for stale items — instead mark `BLOCKED (source N days stale, re-verify)` and leave the queue item in place. Prefix the handoff row title with `⚠ STALE(Nd):`. |
 | **ABORT** | `input_age_days > 3` | Do not execute. Emit `UPSTREAM STALE — source finding for <item> is N days old (newest {date}); not executed this cycle, queue item retained, not re-aged.` Do not advance any age field. |
 
-**Ground-truth re-verification is mandatory even for FRESH items.** The queue item may already be resolved (the exact failure class this whole system was built to prevent — see the gate's "Why this exists"). Before any mutation, re-check the live condition: e.g. for `submodule_pointer_bump`, `git -C <repo> ls-tree HEAD <submodule>` vs the recorded gitlink; for `gitignore_add`, grep the live `.gitignore`; for `branch_delete_merged`, `git branch --merged main`. If the condition is already resolved, mark `Result: NO-OP (already resolved)` and remove the queue item.
+**Ground-truth re-verification is mandatory even for FRESH items.** The queue item may already be resolved (the exact failure class this whole system was built to prevent — see the gate's "Why this exists"). Before any mutation, re-check the live condition: e.g. for `submodule_pointer_bump`, `git -C <repo> ls-tree HEAD <submodule>` vs the recorded gitlink; for `gitignore_add`, grep the live `.gitignore`; for `branch_delete_merged`, **`git fetch origin` first, then prove content-equivalence against the remote — `git diff origin/main <branch>` must be EMPTY** (not `git branch --merged main`, which tests reachability against a possibly-stale *local* ref; see "Remote ref hygiene" below). If the condition is already resolved, mark `Result: NO-OP (already resolved)` and remove the queue item.
 
 
 ## Producer Pre-check, Catch-up, NO_CHANGE & Exit Record (canonical — `_shared/PRODUCER_PRECHECK.md`)
@@ -218,7 +218,25 @@ For each entry in your `required_inputs` (from routine-schedule.json):
      recovered one, never a guaranteed one; (c) if a requeue is observed stalling on
      approvals, say so in the exit record rather than silently re-minting it tomorrow.
      **Do not paper over this by granting broad permissions to a generated task.**
-   - After 2a/2b/2c, if still absent: write the structured exit record (§4) and STOP.
+   - **2d. Producer SKIPped NO_CHANGE ≠ producer dark (quiet-producer starvation,
+     2026-07-16).** Before treating an absent input as a blackout, read the producer's
+     LATEST `fleet-exit-log.jsonl` row. **If it is `SKIP` with `skip_reason` NO_CHANGE**
+     (or PRODUCER_NOT_YET_FIRED that has since resolved to NO_CHANGE upstream), the
+     producer is *quiet, not dark*: it deliberately declined and **reused its prior
+     dated output**, so no `{today}` file will ever appear — SKIP-ing here just chains
+     the quiet forward and starves you on a day whose OTHER inputs may be fresh and
+     analysable. Instead, **consume the producer's most-recent dated file under the
+     freshness gate** (`INPUT_FRESHNESS_GATE.md` DEGRADE/ABORT tiers by age) and
+     proceed. Record `producer_quiet:<name>@<its-last-OK-date>` in your output's
+     Caveats and in the exit-log `skip_reason` field of the row you DO emit (still
+     `OK`, since you did real work on the other inputs). *(Root cause of the
+     2026-07-16 double-starvation: `engineering-routine` SKIPped NO_CHANGE 6+ runs
+     — empty AI-executable queue — so `engineering-{date}.md` never lands; both
+     `failure-analysis` and `memory-consolidation` SKIP-chained behind it while
+     qa/security/devops/approvals reports for the day were FRESH.)* This applies
+     **only** to inputs marked soft/preferred for your routine — a genuinely
+     hard-required input with no valid prior output still SKIPs.
+   - After 2a/2b/2c/2d, if still absent: write the structured exit record (§4) and STOP.
      With 2c done you will re-fire at your real slot today; without it, not until
      tomorrow (or the next catch-up burst).
 3. **If present:** continue to the freshness gate (`INPUT_FRESHNESS_GATE.md`) for
@@ -293,26 +311,41 @@ producer's output is unchanged:
 
 **4. Structured exit record (every routine, every run)**
 
-As the LAST step, append ONE line to `D:\reports\evolution\fleet-exit-log.jsonl`:
+As the LAST step, append ONE line to `D:\reports\evolution\fleet-exit-log.jsonl`.
 
-```json
-{"routine_id":"<id>","run_id":"<ISO-utc>","exit_status":"OK|SKIP|ABORT|FAIL","input_freshness":"FRESH|DEGRADE|ABORT|NA","output_produced_at":"<ISO-utc-or-null>","catch_up":false,"skip_reason":null,"consecutive_failures":0}
+**Use the shared writer. Do NOT hand-build this JSON inside a shell-quoted
+command** (`python -c "..."`, `pwsh -Command "..."`). The writer takes the row as
+*arguments*, so values never cross a second escaping layer:
+
+```
+pwsh -NoProfile -File C:\Users\alexa\.claude\scheduled-tasks\_shared\append-exit-row.ps1 `
+  -RoutineId <id> -ExitStatus OK|SKIP|ABORT|FAIL -InputFreshness FRESH|DEGRADE|ABORT|NA `
+  [-OutputFile <artifact-path>] [-SkipReason '<text>'] [-CatchUp] [-MissedDays N] [-Note '<text>']
 ```
 
-- **`run_id` and `output_produced_at` MUST come from a clock read taken as you
-  write this row, verified from two independent sources** (e.g. PowerShell
-  `(Get-Date).ToUniversalTime()` and `python -c "datetime.now(timezone.utc)"`).
-  This is the same two-source check ESC-018 already requires before dating a
-  report — §4 simply never extended it to the exit row. If the two sources
-  disagree, stop and resolve the skew; do not pick one.
+It emits exactly the contracted shape:
+
+```json
+{"routine_id":"<id>","run_id":"<ISO-utc>","exit_status":"OK|SKIP|ABORT|FAIL","input_freshness":"FRESH|DEGRADE|ABORT|NA","output_produced_at":"<ISO-utc-or-null>","catch_up":false,"missed_days":0,"skip_reason":null,"consecutive_failures":0}
+```
+
+- The writer discharges the clock rules mechanically, so do not re-implement them:
+  it stamps `run_id` from the system clock cross-checked against python (§4 wants
+  **two independent sources** — note that two reads taken inside the *same* shell
+  are one source, not two), derives `output_produced_at` from `-OutputFile`'s real
+  on-disk mtime, and **refuses to write** when `run_id` sits more than
+  `-MaxSkewMinutes` (default 10) from that mtime.
   **Never synthesise `run_id`** from the scheduled fire slot, a rounded hour, or
   the previous run's value — a slot-derived `run_id` is indistinguishable from a
   real one downstream and can sit hours from the work it labels.
-  **Sanity check before appending:** `run_id` must be within minutes of your
-  artifact's on-disk mtime. If it is not, your clock or your source is wrong —
-  fix it before writing, do not write the row and note the discrepancy.
   *(HP-23, 2026-07-31: a row logged `run_id 2026-07-31T02:20:00Z` for an artifact
   whose mtime was `2026-07-30T22:38:53Z` — 3h42m ahead of the work it described.)*
+- *Why the writer exists — 2026-08-01, ceo-routine:* a row hand-built inside a
+  shell-quoted `python -c` stored `D:\reports\security` as `D:eports\security`
+  (the `\r` was eaten as a carriage return) and `§` as `U+FFFD`. A corrupted
+  `skip_reason` is worse than a missing one — `fleet-health-routine` parses these
+  rows, so a mangled path reads as a routine that checked somewhere it did not.
+  Verify the fix any time with `append-exit-row.ps1 -SelfTest`.
 - `routine_id` MUST equal the scheduled-task directory name (e.g.
   `innovation-backlog-routine`, never a short form like `innovation-backlog`).
   Consumers (`fleet-health-routine`) treat known historical aliases
@@ -348,7 +381,47 @@ You may act autonomously on these six classes and no others:
 3. **`cve_patch_bump`** — bump a dependency by a PATCH version to clear a CVE (e.g. `1.2.3 → 1.2.4`). Verify it is patch-only via the lockfile/manifest.
 4. **`cve_minor_bump`** — bump a dependency by a MINOR version to clear a CVE (e.g. `1.2.x → 1.3.0`). Verify it is minor-only. A MAJOR bump is a HALT.
 5. **`lying_doc_reconcile`** — edit a doc whose claim ground-truth has disproved (e.g. a STATUS doc claiming a stack/state that the live system contradicts). Edit ONLY the disproven claim to match verified reality; cite the verifying source in the commit body. Never delete the doc.
-6. **`branch_delete_merged`** — delete a local/remote branch that is fully merged into `main` (verify with `git branch --merged main` / `gh`). Never delete an unmerged branch.
+6. **`branch_delete_merged`** — delete a local/remote branch that is fully merged into `main`. Never delete an unmerged branch. **The merge check is only as fresh as your refs — see "Remote ref hygiene" below; this is the one action class in this routine where a stale ref destroys work rather than producing a bad report.**
+
+## Remote ref hygiene
+
+> Canonical: `scheduled-tasks/_shared/REMOTE_REF_HYGIENE.md`. Read it; the rules
+> below are this routine's binding application of it.
+
+Before reading **any** remote ref, and again **immediately before** executing a
+`branch_delete_merged`:
+
+```
+git fetch origin --prune      # NO refspec — all refs
+```
+
+**Why this routine specifically.** `git branch --merged main` / `git branch -r
+--merged` answer against `refs/remotes/origin/*` **as last fetched**, and against
+your **local** `main`. Both can lie in the dangerous direction:
+
+| Stale input | What you see | What actually happens |
+|---|---|---|
+| Remote-tracking ref predates commits pushed to the branch | Branch looks fully merged | **You delete unmerged work** |
+| Local `main` behind `origin/main` | Branch looks unmerged | You skip a safe delete — harmless |
+
+Only the first is destructive, and it is silent: the command exits 0 and the
+branch genuinely *was* merged as of the ref you read.
+
+**Binding requirements for `branch_delete_merged`:**
+
+1. Re-fetch (no refspec, `--prune`) **immediately before the delete**, not at run
+   start. A fetch at the top of a long run is stale by the time the delete fires.
+2. Verify against **`origin/main`**, never local `main`:
+   `git branch -r --merged origin/main`.
+3. Confirm the tip you are deleting is the tip you verified:
+   re-read `git rev-parse <branch>` after the fetch and compare. If it moved, the
+   branch is active — **abort this item**, do not re-verify and proceed.
+4. If the fetch fails for any reason: `HALTED (refs unverifiable — fetch failed)`.
+   Never delete on stale refs. Fail closed, never open — consistent with the
+   unknown-action-class rule below.
+
+For the five non-destructive classes the same fetch rule applies, but a stale ref
+costs a wrong PR, not lost work.
 
 For each: make the change on a fresh branch named `auto/r11-<action>-<short-id>`, commit with a message citing the linked finding(s), push, and open a PR labelled `auto-generated:r11`. **You do NOT merge.** Per the contract (`auto_merge_rules._descoped_2026-05-26`), merge authority is withheld from any auto-armed agent; the operator merges manually.
 
