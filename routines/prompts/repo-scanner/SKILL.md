@@ -84,6 +84,91 @@ Record which rule fired next to each status label, e.g. "🔴 CRITICAL (rule: pr
 
 ---
 
+# CVE Exposure Ranking (ESC-024)
+
+**Severity grading above is UNCHANGED.** The 🔴 rule still fires on any high/critical CVE past
+7 days, and this routine still does **not** adjudicate exploitability — that remains
+`security-routine`'s call. What follows governs **ordering and presentation only**: which of
+several firing CVEs leads the punch-list, and what facts must travel with it.
+
+`scope` and `manifest_path` are raw fields the Dependabot API already returns. Reading and
+reporting them is ground truth, not judgement — the producer boundary is intact.
+
+**Why this exists.** From 2026-07-21 to 07-31 every CVE-touching routine ranked by *alert
+count*, and `brace-expansion` took every P0 slot on volume alone. Measured against the actual
+alert data for 2026-07-30, `orryx-brain` had **12 class-A (runtime, non-archived) alerts past
+SLA** at that moment — **7 `axios`**, **3 `engine.io`** (in `deploy/directors-api`,
+`deploy/voice-agent`, `src/server`) and **2 runtime `brace-expansion`** — under a class-C bulk
+of 23. **Not one of the twelve appeared in any punch-list, escalation or handoff row.**
+
+Note the precise defect: it is **not** that the loud package was innocent — `brace-expansion`
+had runtime legs of its own. It is that **nobody separated exposure from volume at all**, so a
+development-scoped majority dragged the whole surface's priority with it and buried three
+packages that were genuinely runtime-exposed and older.
+
+## Classify
+
+For each **open high/critical** alert compute `exposure_class`:
+
+| Class | Condition |
+|---|---|
+| **A — runtime-exposed** | `scope == runtime` AND `manifest_path` NOT under `archive/`, `**/archive/**`, or a vendored path |
+| **B — archived-runtime** | `scope == runtime` AND `manifest_path` IS under an archive/vendored path |
+| **C — development** | `scope == development` |
+
+## Order
+
+Order the CVE surface — in the punch-list, in Top Escalations, and in each per-repo
+Escalations section — by:
+
+1. `exposure_class` — **A before B before C**
+2. then **age past SLA**, oldest first
+3. then **count**
+
+**One class-A alert past SLA outranks any number of class-C alerts.** Count is the last
+tiebreak, never the first. If the ordering puts a low-count item above a high-count one, that
+is the rule working, not a bug — say so in one line rather than re-sorting.
+
+## Python authority — `manifest_path`, not `scope`
+
+For pip/Poetry, `dependency.scope` is **unreliable**: `requirements*.txt` carries no dev/prod
+distinction, so Dependabot defaults the whole ecosystem to `runtime`. Observed 2026-07-31 —
+Clinical.Trials' `ecdsa` reported `scope=runtime` with `manifest_path = requirements-dev.txt`.
+
+**For any non-npm ecosystem, classify from `manifest_path` and record both fields.** A path
+matching `*-dev.*`, `*dev-requirements*`, `*test*` or `*[-_]ci.*` is class **C** regardless of
+the `scope` field. Where the two disagree, report the disagreement — never resolve it silently.
+
+## Mandatory reporting
+
+Wherever an open high/critical CVE count appears, give the exposure split as **`A/B/C`** —
+never a bare total. "18 high alerts past SLA" is precisely the presentation that produced
+ESC-024 and is not acceptable output. Name the top-ranked alert explicitly:
+`#<number> <ghsa> <package> <class> <manifest> <age>d`.
+
+## Reference implementation and its limits
+
+`cve-rank.sh` (this directory) implements the classification and ordering, with a `--selftest`
+that asserts both invariants against real alert data. Run it, or reproduce its logic — do not
+invent a different ordering. `./cve-rank.sh --summary <repo>…` gives the `A/B/C` split directly.
+
+Three limits, all of which must be stated rather than silently absorbed:
+
+- **An alert leaves the open set by being fixed OR dismissed.** `fixed_at` alone is not
+  sufficient — a dismissal leaves it `null`. Filter on `fixed_at`, `dismissed_at` **and**
+  `auto_dismissed_at`, or dismissed alerts rank as live ones (observed: `orryx-flow`, dismissed
+  2026-07-30, still ranking until this was fixed).
+- **Class A is an upper bound on exposure, not proof of reachability.** It says "runtime scope,
+  non-archived path" — not that the manifest is consumed. Clinical.Trials' `requirements-lock.txt`
+  is installed by *nothing* (DO-48), so its alerts rank A while being unreachable. Where a repo
+  is known to carry an unconsumed manifest, **say so beside the ranking**; do not hard-code repo
+  names into the rule.
+- **Ordering is not grading.** A class-A alert ranking first does not make the repo 🔴, and a
+  class-C alert past SLA still fires the 🔴 rule. Severity remains the Severity Thresholds table
+  above, adjudication remains `security-routine`'s.
+
+---
+
 # Required Actions
 
 For every configured repository, in order:
@@ -98,7 +183,13 @@ For every configured repository, in order:
    - "workflows configured, last N runs failed"
 5. **Open PRs and issues:** counts + ages. Group dependabot PRs by root package.
 6. **Dependency manifests:** count and list paths. Note which package managers are in use.
-7. **Security alerts:** `gh api repos/{owner}/{name}/dependabot/alerts`. If 403, **record this loudly under "visibility gaps"** — do not silently report zero.
+7. **Security alerts:** `gh api --paginate "repos/{owner}/{name}/dependabot/alerts?state=open&per_page=100"`.
+   - **Always `--paginate`.** An unpaginated read caps at 100 **newest-first** and silently hides the OLDEST alerts — exactly the ones the >7d rule needs.
+   - **Omit the leading slash** on the endpoint. Git Bash rewrites `/repos/...` into a filesystem path and the call fails with `invalid API endpoint`.
+   - Capture per alert: `number`, `security_advisory.ghsa_id`, `security_advisory.severity`, `dependency.scope`, `dependency.manifest_path`, `created_at`. **The last three drive the CVE Exposure Ranking above** — a scan that omits them cannot rank and is `PARTIAL`.
+   - If 403, **record this loudly under "visibility gaps"** — do not silently report zero.
+   - **An empty response is not a zero.** A blank/failed result and a genuine empty array are different; confirm which you got before writing `0`. (Observed 2026-07-31: `-X GET -f state=open` returned blank for all 5 repos and would have read as a clean fleet.)
+   - Alert state moves **during** a scan. Record the read instant; two calls 25s apart have disagreed (`sharp` #1061, 2026-07-31T21:38:03Z open → 21:38:28Z fixed).
 8. **TODO/FIXME inventory:** count + delta vs prior scan + top-5 files by density. Exclude `node_modules/`, `.next/`, `dist/`, `.venv/`, `__pycache__/`, `archive/`, and any nested vendored directory (one whose path contains `-main/` or `-master/` and has its own `package.json`/`pyproject.toml`).
 9. **Documentation:** presence and last-modified date of `CLAUDE.md`, `AGENTS.md`, `README.md`. Flag any code-bearing repo missing `CLAUDE.md`.
 10. **Recent commits:** last 10 commits with date and message.
@@ -120,10 +211,15 @@ Write to `/reports/repo-health/`:
    ```json
    {"date": "YYYY-MM-DD", "repo": "name", "status": "CRITICAL|NEEDS_ATTENTION|OK",
     "rule_fired": "...", "open_prs": N, "open_issues": N, "failing_workflows": N,
-    "cves_high": N, "cves_medium": N, "cves_low": N, "todos": N,
-    "behind": N, "ahead": N, "uncommitted_files": N}
+    "cves_high": N, "cves_medium": N, "cves_low": N,
+    "cve_exposure_A": N, "cve_exposure_B": N, "cve_exposure_C": N,
+    "cve_top": "#<number> <ghsa> <package> <A|B|C> <manifest_path> <age_days>",
+    "todos": N, "behind": N, "ahead": N, "uncommitted_files": N}
    ```
-   This file is the input to next scan's diff computation.
+   This file is the input to next scan's diff computation. `cve_exposure_*` and `cve_top`
+   make the exposure split diffable over time — without them a class-A alert can appear and
+   clear between scans leaving no trace, which is how `engine.io` went unlisted for 9 days.
+   Set them to `null` (not `0`) when the alert API was unavailable.
 
 ---
 
@@ -151,6 +247,9 @@ Write to `/reports/repo-health/`:
 ## Open Issues
 ## Dependencies
 ## Security Alerts (or "VISIBILITY GAP: alerts disabled")
+(open high/critical as an `A/B/C` exposure split, then the alert list ordered per **CVE
+Exposure Ranking**; each row `#<number> <ghsa> <package> <class> scope=<scope>
+manifest=<path> <age>d`. Flag any row where `scope` and `manifest_path` disagree.)
 ## Documentation
 ## TODO/FIXME (top-5 files + delta)
 ## Recent Commits
@@ -193,9 +292,13 @@ Then the body, leading with what humans must act on:
 ## 🚨 This Week's Punch-List (max 5 items, ordered by impact)
 1. ...
 2. ...
+(CVE items ordered per **CVE Exposure Ranking** — class A before B before C, then age, then
+count. Never lead with a high-count class-C item over a past-SLA class-A one.)
 
 ## Top Escalations (P0)
-(each escalation tagged with the rule that fired)
+(each escalation tagged with the rule that fired, and — for CVE rows — its exposure class,
+manifest path and age. Ordered per **CVE Exposure Ranking**. Every high/critical count in
+this section carries an `A/B/C` split, never a bare total.)
 
 ## Health Distribution
 (counts + bullet list, links to per-repo reports)
@@ -248,7 +351,10 @@ Verify each of the following is true. If any fails, append a "ROUTINE EXECUTION 
 - [ ] `history.jsonl` appended (one line per repo scanned)
 - [ ] Every status label has a "rule fired" tag
 - [ ] Every metric labelled "UNKNOWN" or "NOT VISIBLE" appears in Visibility Gaps
-- [ ] No metric is a fabricated zero (e.g. don't write "0 CVEs" if the API returned 403)
+- [ ] No metric is a fabricated zero (e.g. don't write "0 CVEs" if the API returned 403) — and no **blank** API response was recorded as a zero
+- [ ] **CVE exposure split present:** every open high/critical count in the punch-list, Top Escalations and per-repo Security Alerts carries an `A/B/C` split, never a bare total, and the top-ranked alert is named with class + manifest + age (**CVE Exposure Ranking**, ESC-024)
+- [ ] **CVE ordering applied:** no class-C item leads a punch-list or escalation section above a past-SLA class-A item. If a low-count item ranks above a high-count one, that is stated in one line as intended
+- [ ] **`scope`/`manifest_path` disagreements flagged** (pip defaults the whole ecosystem to `runtime`; `manifest_path` is the authority for non-npm)
 - [ ] **Freshness beacon written, with BOTH clocks:** `portfolio-summary-{date}.md` opens with the beacon block (fields per §Portfolio Summary Structure) carrying **`read_completed_utc:`** — the moment your last external `git`/`gh`/API query returned — **and** `scan_completed_utc:` — the moment this file finished being written. Both real UTC timestamps, neither derived from the other, neither substituted for `{date}`.
 - [ ] **`read_completed_utc` ≤ `scan_completed_utc`.** If it is not, your clock or your source is wrong: stop and resolve the skew rather than emitting the beacon (same check as `PRODUCER_PRECHECK.md` §4 `run_id`-vs-mtime, cf. HP-23). A wide gap is fine and expected on a long scan — an **undeclared** gap is the defect. Consumers age every externally-derived fact from the READ time; if you omit it they must treat the read window as unbounded and cannot safely conclude any negative ("no deploy since X", "still open"). Emitting only the write time is what caused the false 🔴 production halt on 2026-07-31 (ESC-021 / ESC-CEO-043).
 - [ ] **Inheritance and completeness declared:** any output INHERITED from a prior run is listed with its **age in days** (not merely its presence), and a partial scan says so explicitly, so a downstream routine does not treat a 20-day-old inherited file as current. See `_shared/INPUT_FRESHNESS_GATE.md` §Self-staleness.
@@ -283,7 +389,7 @@ If a tool or scope is missing, record under Visibility Gaps and continue.
 
 You are the ROOT PRODUCER: you scan ground truth and emit raw findings. You do NOT synthesise, prioritise across domains, or escalate beyond the per-rule severity tags. Downstream routines consume your output and own the interpretation:
 
-- **Security posture, CVE confirmation, secret exposure, severity P0/P1/P2 framing** → the `security` routine synthesises from your scan; you only record raw alert counts (and VISIBILITY GAP on 403), never adjudicate exploitability.
+- **Security posture, CVE confirmation, secret exposure, severity P0/P1/P2 framing** → the `security` routine synthesises from your scan; you record raw alert data (and VISIBILITY GAP on 403) and **never adjudicate exploitability**. *Boundary clarification (ESC-024):* recording `dependency.scope` / `dependency.manifest_path` and ordering by the resulting exposure class **is** raw-finding work — they are fields the API hands you, and the ranking is presentation order, not a severity verdict. What stays out of scope is judging whether a given advisory is *reachable* or *matters* (e.g. "a DoS in a build toolchain is not a PHI risk") — that sentence belongs to `security`, not here. Report the split; let `security` rate it.
 - **CI/CD root-cause, deploy-readiness, infra drift judgement** → the `devops` routine owns this; you record red/green and "since when", it determines what blocks a release.
 - **Test-coverage adequacy, suite health interpretation** → the `qa` routine owns this; you record workflow pass/fail, not whether coverage is sufficient.
 - **Architecture decisions, convergence, dependency-graph rulings** → the `cto` routine synthesises from your reports; do not frame architecture verdicts here.
