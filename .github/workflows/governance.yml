@@ -1,0 +1,108 @@
+# Stops governance.yaml drifting away from reality again — that drift went
+# unnoticed for eleven weeks because nothing ever read the file.
+#
+# CORRECTION: an earlier commit message called this "the first CI in this
+# repository". That is true of `main`, which has no .github at all, and wrong
+# about the repository. Two open PRs already add workflows:
+#   #24 wt/cycle-harness       .github/workflows/cycle-gate-tests.yml
+#   #23 chore/mirror-drift-ci  .github/workflows/mirror-drift.yml
+# This is the third concurrent branch adding CI here. The filenames do not
+# collide so they can land independently, but whoever merges first sets the
+# convention and none of the three was authored aware of the other two.
+#
+# Must run on pull_request as well as push: a required check that does not
+# trigger on PRs deadlocks every PR. This workflow also deliberately has NO
+# `paths:` filter — a path-filtered check that is later marked *required* never
+# reports on PRs outside those paths, which deadlocks them just as thoroughly.
+#
+# If these are ever made required checks, take the context strings from the
+# check-runs API rather than transcribing them. GitHub reports a job's `name:`
+# when set and its job id otherwise, so requiring a workflow *name* against a
+# reported job id is the trap recorded in D:\state\branch-protection.json.
+# The contexts reported here are:
+#     hook_scripts_exist
+#     Secret scan (full tree, blocking)
+name: governance
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  hook-scripts-exist:
+    name: hook_scripts_exist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # No install step: the checker has zero dependencies, by design. This repo
+      # has no root package.json and does not need one for this.
+      # The checker's own failure modes are all silent-pass shaped, so it is
+      # tested before it is trusted.
+      - name: Test the checker
+        run: node --test scripts/check-governance-hooks.test.mjs
+
+      - name: Check governance.yaml describes reality
+        run: node scripts/check-governance-hooks.mjs
+
+  secret-scan:
+    name: Secret scan (full tree, blocking)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Pinned CLI rather than a marketplace action: same approach as
+      # pillarworks-build-mvp/.github/workflows/secret-scan-fulltree.yml, which
+      # is proven in the estate and carries no licence condition.
+      - name: Install gitleaks
+        run: |
+          GLV=8.21.2
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GLV}/gitleaks_${GLV}_linux_x64.tar.gz" -o gitleaks.tgz
+          tar -xzf gitleaks.tgz gitleaks
+          sudo mv gitleaks /usr/local/bin/
+          gitleaks version
+
+      # "hard" requires a test asserting the gate blocks. A scanner that has
+      # silently stopped matching reports the same green as a clean tree, so
+      # prove it still fires before trusting that it found nothing.
+      #
+      # The fixture is built at runtime, outside the repo: writing a literal
+      # that matches would make this workflow itself a finding. The directory
+      # name avoids the config's test/fixtures path allowlist.
+      - name: Self-test — the scanner must flag a known-bad fixture
+        run: |
+          mkdir -p /tmp/gl-probe
+          printf 'sk-ant-api03-%s\n' "$(head -c 90 /dev/zero | tr '\0' 'A')" > /tmp/gl-probe/probe.txt
+          if gitleaks detect --no-git --source /tmp/gl-probe \
+               -c "${GITHUB_WORKSPACE}/.gitleaks.toml" --exit-code 1 >/dev/null 2>&1; then
+            echo "SELF-TEST FAILED: gitleaks did not flag a known-bad fixture."
+            echo "The gate is not detecting. A green scan below would mean nothing."
+            exit 1
+          fi
+          echo "self-test passed: the gate still fires"
+
+      # --no-git scans files on disk, so a secret already sitting in HEAD is
+      # caught too — a diff-only scan reports green on those.
+      - name: Scan full working tree (blocking)
+        run: |
+          gitleaks detect --no-git --source . -c .gitleaks.toml \
+            --redact --verbose --exit-code 1 \
+            --report-format sarif --report-path gitleaks-report.sarif
+
+      - name: Upload findings (if any)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-report
+          path: gitleaks-report.sarif
+          if-no-files-found: ignore
