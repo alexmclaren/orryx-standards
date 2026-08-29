@@ -80,7 +80,17 @@ $rows = @()
 foreach ($line in (Get-Content $MetricsFile)) {
   if (-not $line.Trim()) { continue }
   # Pull timestamp fields out as raw strings BEFORE any JSON parse.
-  $ld = if ($line -match '"local_date":"([^"]+)"') { $Matches[1] } else { $null }
+  # Whitespace-tolerant on purpose, matching the '"field"\s*:\s*"..."' convention
+  # Get-IsoUtcField already uses in cycle-time.ps1 — this line was the only reader
+  # in the harness that did not.
+  #
+  # The writer above emits compact JSON, so a compact-only pattern looks safe. It
+  # is not: when the harness is off disk the runner still has to record its halt,
+  # and a row appended by hand is pretty-printed. Three such rows (local 2026-08-22,
+  # 08-23, 08-29) were valid JSON, correct, and invisible to every summary — the
+  # count came back well-formed and simply too low, which is unfalsifiable by
+  # reading the ledger. Only matching the parser reveals it.
+  $ld = if ($line -match '"local_date"\s*:\s*"([^"]+)"') { $Matches[1] } else { $null }
   if ($ld -ne $Date) { continue }
   try { $o = $line | ConvertFrom-Json } catch { continue }
   $ts = Get-IsoUtcField -Line $line -Field 'ts'
