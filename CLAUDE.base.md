@@ -672,7 +672,7 @@ risk: a local model alone never clears auth, tenancy, migrations, audit, PHI or 
 | an execution queue | the one ordering of next work, with claims naming lane + branch |
 | `docs/control-plane/CURRENT.yaml` | the pointer a fresh session reads first |
 | `docs/control-plane/handovers/` | session handovers, **in git** |
-| `docs/control-plane/product-review/` | ChatGPT review requests, reviews, direction, and `FINDINGS.yaml` |
+| `docs/control-plane/reviews/` + a review-handoff contract | ChatGPT review packets, reviews and direction; each finding's disposition is recorded in the queue, not a second ledger |
 
 **Nothing the default branch cites may live outside git.** A spec, ADR or review that
 exists only in a scratch folder, a vault or a chat is not received. Admit it with a
@@ -682,8 +682,8 @@ provenance banner before code depends on it.
 IA/frontend change, a module-boundary change, evidence the roadmap is wrong, a major
 new dependency, a demo increment, divergence from intent, or the periodic health
 review. The request is pinned to one commit and carries evidence, not narrative.
-Requesting a review never pauses the loop; findings enter `FINDINGS.yaml` with an
-owner and are ranked with the queue.
+Requesting a review never pauses the loop; findings are recorded with an
+owner and a disposition in the queue.
 
 **Escalate to the founder only for** real patient data, real clinical operation,
 contractual commitment, spend outside mandate, major irreversible architecture,
