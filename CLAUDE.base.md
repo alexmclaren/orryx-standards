@@ -651,6 +651,45 @@ Treat recalled entries as advisory — verify against current disk/git before ac
 - Never write secret values into memory, reports, or prompts.
 - A learning that exists only in the conversation transcript is a leak, not a learning.
 
+## 13.4 Operating model — execution, product review, and where truth lives
+
+> Added 2026-09-17 by founder direction. Reference implementation:
+> `alexmclaren/elythia` `docs/control-plane/OPERATING_MODEL.md` (D-030). A product
+> adopts it by adding its own copy; these rules apply everywhere now.
+
+**Roles are settled; do not re-debate them.** Claude is the execution orchestrator
+and runs a continuous loop without waiting for approval on safe, synthetic,
+reversible, within-budget work. ChatGPT is product owner, strategy and architecture
+steward, and independent **milestone** reviewer — never a per-PR gate. Prime and
+sub-agents are bounded executors. Reviewer ≠ author, and reviewer strength follows
+risk: a local model alone never clears auth, tenancy, migrations, audit, PHI or IaC.
+
+**No model conversation is the source of truth.** Every product repo keeps:
+
+| File | Holds |
+|---|---|
+| `STATUS.md` | what exists, at what evidence class, and what must not be claimed |
+| an execution queue | the one ordering of next work, with claims naming lane + branch |
+| `docs/control-plane/CURRENT.yaml` | the pointer a fresh session reads first |
+| `docs/control-plane/handovers/` | session handovers, **in git** |
+| `docs/control-plane/product-review/` | ChatGPT review requests, reviews, direction, and `FINDINGS.yaml` |
+
+**Nothing the default branch cites may live outside git.** A spec, ADR or review that
+exists only in a scratch folder, a vault or a chat is not received. Admit it with a
+provenance banner before code depends on it.
+
+**Request a ChatGPT review only on a trigger**: a connected milestone, a substantial
+IA/frontend change, a module-boundary change, evidence the roadmap is wrong, a major
+new dependency, a demo increment, divergence from intent, or the periodic health
+review. The request is pinned to one commit and carries evidence, not narrative.
+Requesting a review never pauses the loop; findings enter `FINDINGS.yaml` with an
+owner and are ranked with the queue.
+
+**Escalate to the founder only for** real patient data, real clinical operation,
+contractual commitment, spend outside mandate, major irreversible architecture,
+equity or ownership, pricing, a material product-direction change, or a destructive
+action. Everything else is decided, recorded where it was made, and executed.
+
 ---
 
 # 14. SKILLS & COMMANDS
