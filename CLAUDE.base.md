@@ -685,6 +685,13 @@ review. The request is pinned to one commit and carries evidence, not narrative.
 Requesting a review never pauses the loop; findings are recorded with an
 owner and a disposition in the queue.
 
+**What a reviewer may see is set by the data, not the repo label.** A clinical repo on
+synthetic data only may be reviewed by ChatGPT through a packet pinned to a commit;
+no database dump, log or export goes into a packet. Anything holding real patient
+data, or derived from it, stays local tier + Claude only. When a repo or environment
+admits real patient data it reverts to that rule, and its `STATUS.md` records the
+date. "Synthetic" is proven by provenance, never by a client-set flag.
+
 **Escalate to the founder only for** real patient data, real clinical operation,
 contractual commitment, spend outside mandate, major irreversible architecture,
 equity or ownership, pricing, a material product-direction change, or a destructive
